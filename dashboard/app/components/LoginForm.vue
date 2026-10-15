@@ -26,6 +26,7 @@ async function submit() {
 
 <template>
   <section class="card login" aria-labelledby="login-title">
+    <BrandLogo class="logo" :height="96" />
     <h2 id="login-title">Sign in</h2>
     <p class="muted">The dashboard shows live delivery and spend data. Sign in to continue.</p>
     <form @submit.prevent="submit">
@@ -49,6 +50,10 @@ async function submit() {
   max-width: 380px;
   width: 100%;
   margin: 8vh auto 0;
+}
+.logo {
+  display: block;
+  margin: 4px auto 16px;
 }
 .login > p {
   margin: 0 0 16px;
