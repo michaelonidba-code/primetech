@@ -29,6 +29,8 @@ services:
       redpanda:
         condition: service_healthy
     entrypoint: ["bash", "/create-topics.sh"]
+    environment:
+      TOPIC_PARTITION_RETENTION_BYTES: ${TOPIC_PARTITION_RETENTION_BYTES:-268435456}
     volumes:
       - ./infra/create-topics.sh:/create-topics.sh:ro
     restart: "no"
@@ -159,7 +161,8 @@ services:
     environment:
       GATEWAY_URL: http://gateway:8080
       # Every ad break asks the ad server for its ads, like a real player.
-      AD_SERVER_URL: http://ad-server:8090
+      # Empty (SIM_AD_SERVER_URL=) plans ad breaks locally: load tests of the event path alone.
+      AD_SERVER_URL: ${SIM_AD_SERVER_URL-http://ad-server:8090}
       TARGET_EPS: ${TARGET_EPS:-2000}
       DURATION_SECONDS: ${DURATION_SECONDS:-0}
       CONCURRENCY: ${CONCURRENCY:-16}

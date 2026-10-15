@@ -63,6 +63,8 @@ jobs:
         run: >
           docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" -w /etc/prometheus/tests --entrypoint promtool
           prom/prometheus:v3.5.0 test rules ads-eventing-test.yml
+      - name: Load test scripts compile
+        run: python3 -m py_compile loadtest/run.py loadtest/report.py
       - name: Alertmanager config
         run: >
           docker run --rm -v "$PWD/infra/alertmanager:/etc/alertmanager:ro" --entrypoint amtool
