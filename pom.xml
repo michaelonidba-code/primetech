@@ -18,6 +18,7 @@
     <module>openrtb</module>
     <module>mock-dsp</module>
     <module>ad-server</module>
+    <module>pacing-service</module>
   </modules>
 
   <properties>

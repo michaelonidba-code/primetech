@@ -24,6 +24,7 @@ public final class AdServerMetrics {
     private final Timer latency;
     private final Map<String, Counter> winsBySource = new ConcurrentHashMap<>();
     private final Map<String, DspMeters> dsps = new LinkedHashMap<>();
+    private volatile java.util.function.Supplier<Map<String, Object>> pacingSummary = Map::of;
 
     private record DspMeters(Counter requests, Counter bids, Counter noBids, Counter timeouts, Counter errors,
                              Counter wins, Timer latency) {
@@ -60,6 +61,10 @@ public final class AdServerMetrics {
         slotsFilled.increment(filled);
         frequencyCapped.increment(capped);
         latency.record(latencyNanos, TimeUnit.NANOSECONDS);
+    }
+
+    void pacingSummary(java.util.function.Supplier<Map<String, Object>> summary) {
+        this.pacingSummary = summary;
     }
 
     void shed() {
@@ -123,6 +128,7 @@ public final class AdServerMetrics {
             dspStats.put(name, m);
         });
         out.put("dsps", dspStats);
+        out.put("pacing", pacingSummary.get());
         return out;
     }
 

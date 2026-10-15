@@ -33,3 +33,5 @@ create ad-events-clean.v1 12 retention.ms=$WEEK compression.type=producer
 create line-item-minutes.v1 6 cleanup.policy=compact,delete retention.ms=$WEEK
 # Ad server audit log: one record per ad request, joined to events by auction id.
 create ad-decisions.v1 12 retention.ms=$WEEK compression.type=producer
+# Direct line item terms (tier, budget per period), read by the pacing service.
+create line-items.v1 1 cleanup.policy=compact

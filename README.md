@@ -6,7 +6,7 @@ reporting with low latency. It is built to run on one machine with Docker Compos
 measured.
 
 This repository is being built in phases. **Phases 1 (event backbone), 2 (stream processing
-and real-time OLAP) and 3 (ad serving with OpenRTB auctions) are complete.**
+and real-time OLAP), 3 (ad serving with OpenRTB auctions) and 4 (budget pacing) are complete.**
 
 ```
                  ┌────────────── OpenRTB 2.6 ──────────────┐
@@ -27,8 +27,8 @@ and real-time OLAP) and 3 (ad serving with OpenRTB auctions) are complete.**
 | 1. Event backbone | Event schema, ingest gateway, Kafka topics, traffic simulator, live dashboard | ✅ Done |
 | 2. Stream processing | Flink: exactly-once dedup, enrichment, invalid-traffic detection, windowed aggregation with late data; Druid ingestion; reporting panels | ✅ Done |
 | 3. Ad serving | Ad server with direct demand and OpenRTB 2.6 auctions across three mock DSPs, frequency caps, decision log; simulator plays what it serves | ✅ Done |
-| 4. Pacing & budgets | Redis spend counters, PID pacing loop fed by Flink, guaranteed line items | Next |
-| 5. Audit & observability | Reconciliation against simulator ground truth, Prometheus/Grafana, alerts | Planned |
+| 4. Pacing & budgets | Line item budgets and tiers, pacing service (closed-loop controller fed by Flink), served-spend counters, guaranteed priority | ✅ Done |
+| 5. Audit & observability | Reconciliation jobs, Prometheus/Grafana, alerts | Next |
 | 6. Load testing & write-up | Benchmarks, failure drills, design docs | Planned |
 
 ## Quick start
@@ -45,6 +45,7 @@ docker compose up --build
 | Dashboard | http://localhost:3000 |
 | Gateway API | http://localhost:8080 (`/v1/events`, `/stats`, `/metrics`, `/health`) |
 | Ad server API | http://localhost:8090 (`/v1/ad-requests`, `/stats`, `/metrics`, `/health`) |
+| Pacing service | http://localhost:8095 (`/stats`, `/metrics`, `/health`) |
 | Flink web UI | http://localhost:8082 |
 | Druid console and SQL | http://localhost:8888 |
 | Redpanda Console (browse topics) | http://localhost:8081 |
@@ -79,6 +80,7 @@ cd dashboard && npm ci && npm run dev
 | `openrtb/` | OpenRTB 2.6 bid request/response model (the CTV ad pod subset) |
 | `ad-server/` | Ad decisioning: direct line items + OpenRTB auction, frequency caps, decision log |
 | `mock-dsp/` | Configurable OpenRTB bidder: bid rate, value and latency distributions, bid shading |
+| `pacing-service/` | Budget pacing: a controller per line item, fed by Flink's delivered spend, steering the ad server through Redis |
 | `dashboard/` | Nuxt 4 app: gateway throughput, Flink health and Druid campaign delivery |
 | `infra/` | Topic creation script; Druid configuration and ingestion spec |
 
@@ -148,6 +150,7 @@ checked against exact numbers:
 | `campaign-metadata.v1` | 1 | compacted | `campaignId` | ad server (direct catalog at start-up, DSP campaigns on first win) |
 | `ad-events-clean.v1` | 12 | 7 days | `sessionId` | Flink, transactional |
 | `ad-decisions.v1` | 12 | 7 days | `requestId` | ad server |
+| `line-items.v1` | 1 | compacted | `lineItemId` | ad server (tiers and budgets, read by the pacing service) |
 | `line-item-minutes.v1` | 6 | compacted + 7 days | `lineItemId\|windowStart` | Flink, transactional |
 
 ## Phase 2 design: stream processing
@@ -269,9 +272,99 @@ ones, respect floors and slot durations, and count win notices.
   is slow, the ad is served uncapped and the error counted.
 * **Caps count serves, not impressions.** Incrementing at decision time is immediate and cheap;
   the cost is counting the occasional served-but-unplayed ad.
-* **Interim throttle on direct demand.** Without budgets, ~100 direct line items at up to $60 CPM
-  would win almost every slot. Until Phase 4 adds pacing, each line item enters an auction with
-  probability `DIRECT_PARTICIPATION` (1.5%). This is a stand-in, documented as such.
+* **Direct demand is paced.** Without budgets, ~100 direct line items at up to $60 CPM would win
+  almost every slot. Phase 3 shipped a fixed participation probability as a stand-in; Phase 4
+  replaces it with per-line-item pacing (below), keeping the fixed value only as the fallback.
+
+## Phase 4 design: budgets and pacing
+
+### The loop
+
+```
+ad server ──served spend (INCRBY, immediate)──► Redis ◄──throttle, stop threshold── pacing service
+    ▲                                             │                                      ▲
+    └──── reads pacing state every second ────────┘                                      │
+                                                                                         │
+player ─► gateway ─► Flink ─► line-item-minutes.v1 (delivered spend, exactly-once) ──────┘
+```
+
+* Every direct line item has a **tier** and a **budget per pacing period**. Guaranteed line items
+  (sponsorships) take a slot ahead of the auction whenever pacing lets them compete; standard ones
+  compete on price with programmatic demand. The period is a day in real deployments and
+  configurable here (`PACING_PERIOD_MINUTES`, 30 by default) so a whole cycle fits in a demo.
+* The **pacing service** keeps one controller per line item. Every 10 seconds it sets a
+  **throttle**, the probability the line item enters an auction, and a **stop threshold**.
+* The **ad server** reads both from Redis once a second (never per request), applies the
+  throttle when building candidates, and counts what it serves.
+
+### Two sources of truth, two speeds
+
+| | Served spend (ad server, Redis) | Delivered spend (Flink minute totals) |
+|---|---|---|
+| Latency | immediate | ~70 s (minute window, watermark, checkpoint) |
+| Accuracy | overstates: some served ads are never played (1–4% of spend in the live run) | exact: de-duplicated, IVT excluded, exactly-once |
+| Used for | the control loop's feedback, stopping on time | budget accounting, what remaining budget means |
+
+The pacer combines them: remaining budget comes from delivered spend, and is converted into
+served spend using the observed delivered/served ratio. The ad server stops a line item the
+moment its live served counter reaches that threshold, without waiting a minute for Flink.
+
+### Control law
+
+Rather than a textbook PID on spend, each pacer learns a **yield**, the delivered spend per
+minute the line item would get at throttle 1, from the growth of served spend divided by the
+throttle that produced it. It then sets
+
+```
+throttle = (remaining budget ÷ remaining time) ÷ yield
+```
+
+* Basing the target on *remaining* budget makes any earlier shortfall or overshoot correct itself
+  (the integral action), with nothing to wind up.
+* Dividing each observation by the throttle that caused it removes the feedback delay that makes a
+  plain controller oscillate.
+* Each tick may cut the throttle by up to 4× but only double it: overspending cannot be undone,
+  underspending can be caught up.
+* Catching up is capped at **2× the even rate**, so a line item that starts late in a period, or
+  comes back from an outage, spends what it reasonably can instead of its whole budget in a burst.
+* At a period boundary the pacer keeps the learned yield but **not the throttle**: the new period
+  starts at the even rate for its fresh budget.
+* Delivery up to the horizon is compared with what was served **15 s earlier**, the measured
+  price-weighted mean time from serving an ad to playing it (a pod's ads play one after another),
+  so ads still waiting to play are neither counted as delivered nor double-counted as in flight.
+
+The controller was developed against a closed-loop simulation with the real system's lags
+(`LineItemPacerTest`): minute totals reported ~70 s late, ads playing up to 30 s after they are
+served, and 80% of served spend turning into delivery. Scenarios: steady traffic, traffic
+tripling mid-period, traffic 30× what is needed, a budget needing 90% of all available traffic,
+and a cold start 85% of the way into a period. Every full period delivers 98.9–99.2% of budget,
+plus 0.3–0.5% that plays just after the boundary and counts towards the next period, with the
+worst deviation from the even curve 0.8–5.9%. Learning the yield from delivered spend instead (the
+first version) allowed deviations of up to 15%.
+
+**What the live run caught that the first simulation did not.** The first full-stack run started
+the stack 85% of the way into a period. Every pacer chased 85% of its budget at once, drove its
+throttle to 1 and reported `UNDER_DELIVERING`; the next period inherited those throttles, and ads
+served at throttle 1 just before the boundary played, and counted, in the next period. That period
+overspent on 49 of 107 line items, by up to 51%, while the period after it, started cleanly, held
+the median line item within 3% of the even curve. The simulation had started every run at a
+period boundary and played every ad the instant it was served. Adding both effects reproduced the
+overspend (`startingLateInAPeriodDoesNotOverspendTheNext`); the catch-up cap, the reset at
+rollover and a serve-to-play allowance fixed it. The second live run then had no overspend but
+delivered a uniform 94% of budget: the allowance, guessed at 30 s, was twice the real delay, so
+already-delivered spend was also counted as in flight. Measuring the delay from the logs (each
+impression joined to its auction) gave 15 s.
+
+### Failure behaviour
+
+* **Pacing service down or stale for 60 s:** the ad server falls back to a small fixed throttle
+  (`DIRECT_PARTICIPATION`) and a hard stop once a line item's served spend reaches its budget.
+  Delivery never exceeds what was served, so this cannot overspend; it may under-deliver for a
+  while. (The first version stopped at budget ÷ 0.8, assuming 20% of served ads go unplayed. The
+  live run measured 1–4%, which would have let the fallback overspend by about 20%.)
+* **Redis down:** the same fallback, with the ad server's own served counter as the stop.
+* **Traffic too thin for a budget:** the throttle reaches 1 and the line item reports
+  `UNDER_DELIVERING`, instead of looking merely "behind".
 
 ## Measured results
 
@@ -369,6 +462,42 @@ the fast DSPs miss the deadline. It degrades gradually rather than failing.
 * **Second-price auctions overcharged sole bidders by 1¢** (floor + 1¢ instead of the floor).
   Caught by `AuctionTest`.
 
+### Phase 4: budget pacing
+
+Full stack at 2,000 events/s with 10-minute pacing periods (`PACING_PERIOD_MINUTES=10`,
+`BUDGET_SCALE=0.33`): 107 line items, 12 of them guaranteed, $2,515.59 of budget per period.
+Delivered spend is read back from Druid per line item and period, served spend from Redis and from
+the decision log.
+
+Two consecutive full periods of run 4, the final code (the stack started 3 minutes into the
+period before them):
+
+| Check | Period 1 | Period 2 |
+|---|---|---|
+| Line items over budget by more than 1% | **0** | **0** |
+| Highest delivered / budget | 100.0% | 98.9% |
+| Median delivered / budget | 96.9% | 96.4% |
+| Line items within 95–101% of budget | 106 / 107 | 97 / 107 |
+| Ad server served-spend counters (Redis) vs the decision log | **identical** ($2,406.02) | **identical** ($2,530.03) |
+
+Delivery lands a few percent under budget by design: everything that can go wrong in the
+estimate (late delivery data, ads not yet played, the delivered/served ratio) is resolved towards
+stopping early, because an advertiser can be offered a make-good for under-delivery but cannot be
+un-charged.
+
+**What the three live runs found:**
+
+| Run | Change before it | Over budget >1% | Median delivered / budget |
+|---|---|---|---|
+| 1 | (first version) | 49 of 107, worst 151% | 100.5% |
+| 2 | catch-up cap, throttle reset at rollover, 30 s serve-to-play allowance | 0 | 94% |
+| 3 | allowance set to the measured 15 s | 0 | 96.7% |
+| 4 (table above) | stops assume every served ad plays until a ratio is observed, and in the fallback | 0 | 96.4–96.9% |
+
+Run 1's overspend came from starting the stack late in a period (see the control law section).
+Run 1's period after that one, started cleanly, was already within 3% of the even curve; the
+controller was right, the cold start and rollover were not.
+
 ## API
 
 `POST /v1/events`
@@ -408,7 +537,9 @@ including Kafka producer and JVM metrics.
 | `KAFKA_BOOTSTRAP` | simulator | unset; without an ad server, publishes the campaign catalog |
 | `DSP_ENDPOINTS` | ad server | `name=url,...` |
 | `TMAX_MS`, `FLOOR_CPM`, `AUCTION_TYPE` | ad server | `120`, `5.00`, `first` (or `second`) |
-| `DIRECT_PARTICIPATION`, `MAX_IN_FLIGHT`, `DSP_FREQUENCY_CAP_PER_HOUR` | ad server | `0.015`, `256`, `4` |
+| `DIRECT_PARTICIPATION`, `MAX_IN_FLIGHT`, `DSP_FREQUENCY_CAP_PER_HOUR` | ad server | `0.015` (fallback without pacing), `256`, `4` |
+| `PACING_PERIOD_MINUTES`, `BUDGET_SCALE` | ad server, pacing service | `30`, `1.0` (budgets sized for 30 min at ~2,000 events/s) |
+| `PACING_TICK_SECONDS` | pacing service | `10` |
 | `REDIS_URL`, `DEVICE_ID_SECRET` | ad server | unset = in-process caps; secret must match the gateway's |
 | `DSP_PROFILE`, `PUBLIC_URL` | mock DSP | `premium`, `budget` or `slow`; URL for win notices |
 | `DEDUP_TTL_MINUTES` | stream-processor | `30` |
@@ -434,8 +565,13 @@ including Kafka producer and JVM metrics.
 * The ad server has a cold-start transient: in the first ~20 s after start, before the JIT and
   DSP connection pools warm up, some auctions time out or are shed (1,432 failed requests at the
   start of the measured run, then none).
-* Direct demand is throttled by a fixed participation probability until pacing replaces it in
-  Phase 4.
+* Pacing has a cold-start transient. A stack started part-way through a period has no traffic for
+  its first ~40 s, so the pacer cannot learn a yield and probes upwards. Ads served by that probe
+  play early in the next period, which in the measured run opened 55% ahead of its even curve,
+  was 14% ahead by mid-period, and still finished under budget. Steady periods stay within ~5%.
+* The pacing service keeps its state in memory and rebuilds it from Kafka on restart; with
+  several ad server instances, served spend is shared through Redis but each instance sees the
+  others' spend up to a second late.
 * Druid's supervisor reports a lag of a few records per partition on the clean topic. Those are
   Kafka transaction markers, which a `read_committed` consumer never receives as records.
 * Flink operator metrics (duplicates dropped, IVT flagged) restart from zero when the job

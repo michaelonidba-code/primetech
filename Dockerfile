@@ -12,6 +12,7 @@ COPY stream-processor stream-processor
 COPY openrtb openrtb
 COPY mock-dsp mock-dsp
 COPY ad-server ad-server
+COPY pacing-service pacing-service
 RUN --mount=type=cache,target=/root/.m2 \
     --mount=type=secret,id=truststore,required=false \
     MAVEN_OPTS="$MAVEN_OPTS" mvn -B -q -DskipTests package
@@ -33,6 +34,10 @@ COPY --from=build /src/event-simulator/target/event-simulator.jar /app/app.jar
 FROM runtime-base AS ad-server
 COPY --from=build /src/ad-server/target/ad-server.jar /app/app.jar
 EXPOSE 8090
+
+FROM runtime-base AS pacing-service
+COPY --from=build /src/pacing-service/target/pacing-service.jar /app/app.jar
+EXPOSE 8095
 
 FROM runtime-base AS mock-dsp
 COPY --from=build /src/mock-dsp/target/mock-dsp.jar /app/app.jar

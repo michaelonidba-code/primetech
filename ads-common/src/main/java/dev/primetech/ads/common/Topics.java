@@ -13,6 +13,8 @@ public final class Topics {
     public static final String LINE_ITEM_MINUTES = "line-item-minutes.v1";
     /** One record per ad request: candidates, bids, winners and clearing prices. Keyed by request id. */
     public static final String AD_DECISIONS = "ad-decisions.v1";
+    /** Direct line item terms (tier, budget), compacted, keyed by line item id. */
+    public static final String LINE_ITEMS = "line-items.v1";
 
     private Topics() {
     }

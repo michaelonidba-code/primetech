@@ -2,6 +2,7 @@ package dev.primetech.ads.adserver;
 
 import dev.primetech.ads.common.CampaignMetadata;
 import dev.primetech.ads.common.adserving.AdDecision;
+import dev.primetech.ads.common.catalog.LineItemConfig;
 
 import java.util.concurrent.CompletableFuture;
 
@@ -16,6 +17,9 @@ public interface DecisionSink extends AutoCloseable {
      * returned future completes when the broker has the record, so callers can retry.
      */
     CompletableFuture<Void> campaign(CampaignMetadata campaign);
+
+    /** Line item terms for the pacing service; completes when the broker has the record. */
+    CompletableFuture<Void> lineItem(LineItemConfig lineItem);
 
     @Override
     default void close() {

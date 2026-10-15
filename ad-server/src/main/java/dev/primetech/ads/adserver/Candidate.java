@@ -7,6 +7,7 @@ package dev.primetech.ads.adserver;
  * @param impId        the OpenRTB imp a DSP bid is for (slot position as a string); null for direct
  * @param bidCpmMicros what the candidate offers: a direct line item's fixed CPM, or the DSP bid
  * @param nurl         DSP win notice URL with macros; null for direct
+ * @param guaranteed   a guaranteed direct line item: wins ahead of the auction (priority tier)
  */
 public record Candidate(
         String source,
@@ -19,7 +20,8 @@ public record Candidate(
         int durationSeconds,
         long bidCpmMicros,
         int frequencyCapPerHour,
-        String nurl) {
+        String nurl,
+        boolean guaranteed) {
 
     public static final String DIRECT = "direct";
 

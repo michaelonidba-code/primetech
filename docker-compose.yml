@@ -104,9 +104,31 @@ services:
       TMAX_MS: ${TMAX_MS:-120}
       FLOOR_CPM: ${FLOOR_CPM:-5.00}
       AUCTION_TYPE: ${AUCTION_TYPE:-first}
+      # Budget periods: must match the pacing service.
+      PACING_PERIOD_MINUTES: ${PACING_PERIOD_MINUTES:-30}
+      BUDGET_SCALE: ${BUDGET_SCALE:-1.0}
       JAVA_OPTS: -Xms512m -Xmx512m -XX:+UseZGC -XX:+ZGenerational
     ports:
       - "8090:8090"
+
+  # Reads delivered spend from Flink's minute totals and line item budgets, and steers the ad
+  # server through Redis: a throttle and a stop threshold per line item.
+  pacing-service:
+    build:
+      context: .
+      target: pacing-service
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      REDIS_URL: redis://redis:6379
+      PACING_PERIOD_MINUTES: ${PACING_PERIOD_MINUTES:-30}
+      JAVA_OPTS: -Xmx256m -XX:+UseZGC -XX:+ZGenerational
+    ports:
+      - "8095:8095"
 
   simulator:
     build:
@@ -264,6 +286,7 @@ services:
       NUXT_FLINK_URL: http://jobmanager:8081
       NUXT_DRUID_URL: http://router:8888
       NUXT_AD_SERVER_URL: http://ad-server:8090
+      NUXT_PACING_URL: http://pacing-service:8095
     ports:
       - "3000:3000"
 

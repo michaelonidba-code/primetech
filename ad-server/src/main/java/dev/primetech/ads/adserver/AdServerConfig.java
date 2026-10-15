@@ -17,6 +17,8 @@ public record AdServerConfig(
         AdDecisionService.Settings settings,
         int campaigns,
         double directParticipation,
+        long pacingPeriodMinutes,
+        double budgetScale,
         int maxInFlight,
         long seed,
         String corsOrigin) {
@@ -44,7 +46,11 @@ public record AdServerConfig(
                         auction.equals("first") ? BidRequest.FIRST_PRICE : BidRequest.SECOND_PRICE,
                         Integer.parseInt(env.getOrDefault("DSP_FREQUENCY_CAP_PER_HOUR", "4"))),
                 Integer.parseInt(env.getOrDefault("CAMPAIGNS", "50")),
+                // Without pacing state (no Redis, or the pacing service is down): fixed participation.
                 Double.parseDouble(env.getOrDefault("DIRECT_PARTICIPATION", "0.015")),
+                Long.parseLong(env.getOrDefault("PACING_PERIOD_MINUTES", "30")),
+                // Catalog budgets are sized for a 30-minute period at ~2,000 events/s; scale to taste.
+                Double.parseDouble(env.getOrDefault("BUDGET_SCALE", "1.0")),
                 Integer.parseInt(env.getOrDefault("MAX_IN_FLIGHT", "256")),
                 Long.parseLong(env.getOrDefault("SEED", "42")),
                 env.getOrDefault("CORS_ORIGIN", "*"));
