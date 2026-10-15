@@ -13,9 +13,10 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
-    // Server-only. Overridden with NUXT_FLINK_URL and NUXT_DRUID_URL.
+    // Server-only. Overridden with NUXT_FLINK_URL, NUXT_DRUID_URL and NUXT_AD_SERVER_URL.
     flinkUrl: 'http://localhost:8082',
     druidUrl: 'http://localhost:8888',
+    adServerUrl: 'http://localhost:8090',
     public: {
       // Overridden at runtime with NUXT_PUBLIC_GATEWAY_URL, or per visit with ?gateway=<url>.
       gatewayUrl: 'http://localhost:8080',

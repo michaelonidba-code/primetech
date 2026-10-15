@@ -19,13 +19,13 @@ final class Session {
     final boolean consent;
     final boolean bot;
 
-    private final AdCatalog.AdSpec[] ads;
+    private final SessionPlanner.PodAd[] ads;
     private final EventType[] types;
     private final long[] dueMs;
     private int next;
 
     Session(String sessionId, String deviceId, DeviceType deviceType, String country, boolean consent,
-            boolean bot, AdCatalog.AdSpec[] ads, EventType[] types, long[] dueMs) {
+            boolean bot, SessionPlanner.PodAd[] ads, EventType[] types, long[] dueMs) {
         this.sessionId = sessionId;
         this.deviceId = deviceId;
         this.deviceType = deviceType;
@@ -52,7 +52,7 @@ final class Session {
     /** Emits the next planned event. {@code random} only supplies the event id. */
     ClientEvent emitNext(RandomGenerator random) {
         int i = next++;
-        AdCatalog.AdSpec ad = ads[i];
+        SessionPlanner.PodAd ad = ads[i];
         EventType type = types[i];
         return new ClientEvent(
                 new UUID(random.nextLong(), random.nextLong()).toString(),
@@ -67,6 +67,7 @@ final class Session {
                 deviceType,
                 country,
                 consent,
-                type.isBillable() ? ad.impressionPriceMicros() : null);
+                type.isBillable() ? ad.priceMicros() : null,
+                ad.auctionId());
     }
 }

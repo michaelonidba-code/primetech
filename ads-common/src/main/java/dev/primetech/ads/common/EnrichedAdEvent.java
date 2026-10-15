@@ -11,6 +11,7 @@ package dev.primetech.ads.common;
  * @param campaignName   null if metadata for the campaign never arrived
  * @param ivtReason      null for valid traffic, otherwise why the event is not billable
  * @param processedTimeMs when the stream processor emitted this record (processing time)
+ * @param auctionId      the ad server decision that served the ad, if any (joins to ad-decisions.v1)
  */
 public record EnrichedAdEvent(
         int schemaVersion,
@@ -32,7 +33,8 @@ public record EnrichedAdEvent(
         String country,
         boolean consent,
         Long priceMicros,
-        String ivtReason) {
+        String ivtReason,
+        String auctionId) {
 
     public static final int SCHEMA_VERSION = 1;
 
@@ -42,7 +44,7 @@ public record EnrichedAdEvent(
                 meta == null ? null : meta.campaignName(),
                 meta == null ? null : meta.advertiserId(),
                 meta == null ? null : meta.advertiserName(),
-                e.deviceIdHash(), e.deviceType(), e.country(), e.consent(), e.priceMicros(), null);
+                e.deviceIdHash(), e.deviceType(), e.country(), e.consent(), e.priceMicros(), null, e.auctionId());
     }
 
     public boolean isIvt() {
@@ -57,6 +59,6 @@ public record EnrichedAdEvent(
     public EnrichedAdEvent withIvt(String reason) {
         return new EnrichedAdEvent(schemaVersion, eventId, type, eventTimeMs, receivedTimeMs, processedTimeMs,
                 sessionId, adId, creativeId, campaignId, lineItemId, campaignName, advertiserId, advertiserName,
-                deviceIdHash, deviceType, country, consent, priceMicros, reason);
+                deviceIdHash, deviceType, country, consent, priceMicros, reason, auctionId);
     }
 }

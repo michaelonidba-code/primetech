@@ -13,7 +13,7 @@ const rejectionRows = computed(() =>
     <header>
       <div>
         <h1>Ads Eventing</h1>
-        <p class="muted">Live pipeline · gateway → Kafka → Flink → Druid</p>
+        <p class="muted">Live pipeline · ad server → player → gateway → Kafka → Flink → Druid</p>
       </div>
       <div class="status" :class="status" role="status">
         <span class="icon" aria-hidden="true">{{ status === 'up' ? '●' : status === 'down' ? '▲' : '○' }}</span>
@@ -55,6 +55,8 @@ const rejectionRows = computed(() =>
         :tone="(latest?.publishFailures ?? 0) === 0 ? 'good' : 'critical'"
       />
     </section>
+
+    <AdServingPanel />
 
     <PipelinePanel />
 

@@ -40,7 +40,7 @@ public final class EventValidator {
         }
         if (tooLong(e.eventId()) || tooLong(e.sessionId()) || tooLong(e.adId())
                 || tooLong(e.creativeId()) || tooLong(e.campaignId()) || tooLong(e.lineItemId())
-                || tooLong(e.deviceId())) {
+                || tooLong(e.deviceId()) || tooLong(e.auctionId())) {
             return Optional.of(RejectReason.FIELD_TOO_LONG);
         }
         if (!isCountryCode(e.country())) {

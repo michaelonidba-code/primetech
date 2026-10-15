@@ -16,6 +16,8 @@ public record SimulatorConfig(
         double botSessionShare,
         int botDevices,
         String kafkaBootstrap,
+        String adServerUrl,
+        int adRequestConcurrency,
         long seed) {
 
     public static SimulatorConfig fromEnv(Map<String, String> env) {
@@ -34,6 +36,9 @@ public record SimulatorConfig(
                 Integer.parseInt(env.getOrDefault("BOT_DEVICES", "5")),
                 // Optional: where to publish the campaign catalog. Unset skips publishing.
                 env.get("KAFKA_BOOTSTRAP"),
+                // Optional: get each break's ads from the ad server instead of the local catalog.
+                env.get("AD_SERVER_URL"),
+                Integer.parseInt(env.getOrDefault("AD_REQUEST_CONCURRENCY", "256")),
                 Long.parseLong(env.getOrDefault("SEED", "42")));
     }
 }
