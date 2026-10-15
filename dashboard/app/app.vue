@@ -13,7 +13,7 @@ const rejectionRows = computed(() =>
     <header>
       <div>
         <h1>Ads Eventing</h1>
-        <p class="muted">Ingest gateway · live</p>
+        <p class="muted">Live pipeline · gateway → Kafka → Flink → Druid</p>
       </div>
       <div class="status" :class="status" role="status">
         <span class="icon" aria-hidden="true">{{ status === 'up' ? '●' : status === 'down' ? '▲' : '○' }}</span>
@@ -56,6 +56,8 @@ const rejectionRows = computed(() =>
       />
     </section>
 
+    <PipelinePanel />
+
     <section class="card">
       <h2>Accepted events per second · last 5 minutes</h2>
       <ThroughputChart :points="history" />
@@ -84,6 +86,8 @@ const rejectionRows = computed(() =>
         <p v-else class="muted">No rejected events.</p>
       </section>
     </div>
+
+    <CampaignTable />
   </main>
 </template>
 

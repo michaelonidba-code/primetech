@@ -68,9 +68,33 @@ final class SessionPlanner {
                 DEVICE_TYPES[weighted(DEVICE_WEIGHTS, random)],
                 COUNTRIES[weighted(COUNTRY_WEIGHTS, random)],
                 random.nextDouble() < CONSENT_RATE,
+                false,
                 ads.toArray(AdCatalog.AdSpec[]::new),
                 types.toArray(EventType[]::new),
                 dueArr);
+    }
+
+    /**
+     * A bot session: a pod of three ads, each an impression followed half a second later by a
+     * "complete" (no real player finishes a 15-30s ad that fast), always from the same device.
+     * Bots claim consent, so their hashed device id is visible to invalid-traffic detection.
+     */
+    Session planBot(long startMs, String botDeviceId, RandomGenerator random) {
+        int ads = 3;
+        var specs = new AdCatalog.AdSpec[ads * 2];
+        var types = new EventType[ads * 2];
+        var due = new long[ads * 2];
+        for (int a = 0; a < ads; a++) {
+            AdCatalog.AdSpec ad = catalog.pick(random);
+            specs[2 * a] = ad;
+            specs[2 * a + 1] = ad;
+            types[2 * a] = EventType.IMPRESSION;
+            types[2 * a + 1] = EventType.COMPLETE;
+            due[2 * a] = startMs + a * 1_000L;
+            due[2 * a + 1] = startMs + a * 1_000L + 500;
+        }
+        return new Session(new UUID(random.nextLong(), random.nextLong()).toString(), botDeviceId,
+                DeviceType.CTV, "US", true, true, specs, types, due);
     }
 
     /** Average events per session, measured by sampling, so the engine can hit a target event rate. */

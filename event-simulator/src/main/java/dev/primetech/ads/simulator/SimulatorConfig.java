@@ -13,6 +13,9 @@ public record SimulatorConfig(
         double lateRate,
         long lateDelayMs,
         double invalidRate,
+        double botSessionShare,
+        int botDevices,
+        String kafkaBootstrap,
         long seed) {
 
     public static SimulatorConfig fromEnv(Map<String, String> env) {
@@ -27,6 +30,10 @@ public record SimulatorConfig(
                 Double.parseDouble(env.getOrDefault("LATE_RATE", "0.02")),
                 Long.parseLong(env.getOrDefault("LATE_DELAY_MS", "30000")),
                 Double.parseDouble(env.getOrDefault("INVALID_RATE", "0.005")),
+                Double.parseDouble(env.getOrDefault("BOT_SESSION_SHARE", "0.01")),
+                Integer.parseInt(env.getOrDefault("BOT_DEVICES", "5")),
+                // Optional: where to publish the campaign catalog. Unset skips publishing.
+                env.get("KAFKA_BOOTSTRAP"),
                 Long.parseLong(env.getOrDefault("SEED", "42")));
     }
 }

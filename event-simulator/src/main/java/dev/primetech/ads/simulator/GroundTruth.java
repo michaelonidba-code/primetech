@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.LongAdder;
 
 /**
  * What the simulator actually produced. After de-duplication, the pipeline's counts should equal
- * {@link #uniqueValid}; the reconciliation job in a later phase checks exactly that.
+ * {@link #uniqueValid} (bot events included: they are valid payloads, flagged downstream as IVT).
  */
 final class GroundTruth {
     final Map<EventType, LongAdder> uniqueValid = new EnumMap<>(EventType.class);
@@ -17,6 +17,8 @@ final class GroundTruth {
     final LongAdder duplicates = new LongAdder();
     final LongAdder late = new LongAdder();
     final LongAdder invalid = new LongAdder();
+    final LongAdder botSessions = new LongAdder();
+    final LongAdder botEvents = new LongAdder();
 
     GroundTruth() {
         for (EventType t : EventType.values()) {
@@ -35,6 +37,8 @@ final class GroundTruth {
                 .append(" duplicates=").append(duplicates.sum())
                 .append(" late=").append(late.sum())
                 .append(" invalid=").append(invalid.sum())
+                .append(" botSessions=").append(botSessions.sum())
+                .append(" botEvents=").append(botEvents.sum())
                 .append(" billedMicros=").append(billedMicros.sum())
                 .append(" byType={");
         uniqueValid.forEach((t, n) -> sb.append(t).append('=').append(n.sum()).append(' '));
