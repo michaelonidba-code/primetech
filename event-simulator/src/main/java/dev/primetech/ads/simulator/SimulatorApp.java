@@ -1,0 +1,65 @@
+package dev.primetech.ads.simulator;
+
+import dev.primetech.ads.common.ClientEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.SplittableRandom;
+
+public final class SimulatorApp {
+    private static final Logger log = LoggerFactory.getLogger(SimulatorApp.class);
+    private static final long TICK_MS = 20;
+    private static final long REPORT_EVERY_MS = 5_000;
+
+    public static void main(String[] args) throws Exception {
+        SimulatorConfig config = SimulatorConfig.fromEnv(System.getenv());
+        log.info("starting: {}", config);
+
+        var random = new SplittableRandom(config.seed());
+        var catalog = AdCatalog.generate(config.campaigns(), random);
+        var truth = new GroundTruth();
+        var engine = new TrafficEngine(new SessionPlanner(catalog),
+                new FaultInjector(config.duplicateRate(), config.lateRate(), config.invalidRate()),
+                random, truth, config.targetEventsPerSecond(), config.lateDelayMs());
+
+        try (var client = new GatewayClient(config.gatewayUrl(), config.concurrency())) {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> log.info("ground truth: {}", truth.summary())));
+
+            long start = System.currentTimeMillis();
+            long end = config.durationSeconds() > 0 ? start + config.durationSeconds() * 1000 : Long.MAX_VALUE;
+            long nextReport = start + REPORT_EVERY_MS;
+            long sentAtLastReport = 0;
+
+            while (System.currentTimeMillis() < end) {
+                long now = System.currentTimeMillis();
+                List<ClientEvent> due = engine.tick(now);
+                for (int i = 0; i < due.size(); i += config.batchSize()) {
+                    client.submit(List.copyOf(due.subList(i, Math.min(due.size(), i + config.batchSize()))));
+                }
+                if (now >= nextReport) {
+                    long sent = client.sentEvents.sum();
+                    log.info("rate={}/s accepted={} rejected={} retries={} failed={} inFlight={} activeSessions={} p99={}ms",
+                            (sent - sentAtLastReport) * 1000 / REPORT_EVERY_MS, client.accepted.sum(),
+                            client.rejected.sum(), client.retries.sum(), client.failedEvents.sum(),
+                            client.inFlight(), engine.activeSessions(), client.drainP99Millis());
+                    sentAtLastReport = sent;
+                    nextReport += REPORT_EVERY_MS;
+                }
+                long sleep = TICK_MS - (System.currentTimeMillis() - now);
+                if (sleep > 0) {
+                    Thread.sleep(sleep);
+                }
+            }
+            client.drain(Duration.ofSeconds(30));
+            long elapsed = Math.max(1, (System.currentTimeMillis() - start) / 1000);
+            log.info("done: sent={} ({}/s avg) accepted={} rejected={} retries={} failed={}",
+                    client.sentEvents.sum(), client.sentEvents.sum() / elapsed, client.accepted.sum(),
+                    client.rejected.sum(), client.retries.sum(), client.failedEvents.sum());
+        }
+    }
+
+    private SimulatorApp() {
+    }
+}

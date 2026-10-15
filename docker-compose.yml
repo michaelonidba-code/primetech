@@ -1,0 +1,85 @@
+name: ads-eventing
+
+services:
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"   # Kafka API for tools on the host
+      - "9644:9644"     # admin API and Prometheus metrics
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  topics:
+    image: redpandadata/redpanda:v24.2.7
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["bash", "/create-topics.sh"]
+    volumes:
+      - ./infra/create-topics.sh:/create-topics.sh:ro
+    restart: "no"
+
+  console:
+    image: redpandadata/console:v2.7.2
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+    ports:
+      - "8081:8080"
+
+  gateway:
+    build:
+      context: .
+      target: gateway
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      DEVICE_ID_SECRET: ${DEVICE_ID_SECRET:-local-dev-secret-change-me}
+      # A fixed heap: ZGC otherwise grows towards MaxRAMPercentage of the whole host.
+      JAVA_OPTS: -Xms1g -Xmx1g -XX:+UseZGC -XX:+ZGenerational
+    ports:
+      - "8080:8080"
+
+  simulator:
+    build:
+      context: .
+      target: simulator
+    depends_on:
+      - gateway
+    environment:
+      GATEWAY_URL: http://gateway:8080
+      TARGET_EPS: ${TARGET_EPS:-2000}
+      DURATION_SECONDS: ${DURATION_SECONDS:-0}
+      CONCURRENCY: ${CONCURRENCY:-16}
+      # Holds every active session's plan: ~225k sessions at 50k events/s.
+      JAVA_OPTS: -Xms2g -Xmx2g -XX:+UseZGC -XX:+ZGenerational
+
+  dashboard:
+    build:
+      context: ./dashboard
+    environment:
+      # The browser calls the gateway directly, so this is the host-side address.
+      NUXT_PUBLIC_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+
+volumes:
+  redpanda-data:
