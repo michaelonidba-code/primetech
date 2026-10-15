@@ -2,11 +2,11 @@ package dev.primetech.ads.pacing;
 
 import dev.primetech.ads.common.Json;
 import dev.primetech.ads.common.pacing.PacingState;
+import dev.primetech.ads.common.pacing.ServedSpend;
 import redis.clients.jedis.JedisPooled;
 
 import java.io.IOException;
 import java.net.URI;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -22,15 +22,9 @@ public final class RedisPacingStore implements PacingStore, AutoCloseable {
 
     @Override
     public Map<String, Long> served(long periodIndex, Collection<String> lineItemIds) {
-        if (lineItemIds.isEmpty()) {
-            return Map.of();
-        }
-        List<String> ids = new ArrayList<>(lineItemIds);
-        List<String> values = redis.mget(ids.stream().map(id -> PacingState.servedKey(periodIndex, id)).toArray(String[]::new));
         var out = new HashMap<String, Long>();
-        for (int i = 0; i < ids.size(); i++) {
-            out.put(ids.get(i), values.get(i) == null ? 0L : Long.parseLong(values.get(i)));
-        }
+        lineItemIds.forEach(id -> out.put(id, 0L));
+        out.putAll(ServedSpend.read(redis, periodIndex, lineItemIds));
         return out;
     }
 

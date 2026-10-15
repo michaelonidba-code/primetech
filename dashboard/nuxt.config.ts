@@ -38,6 +38,16 @@ export default defineNuxtConfig({
     druidUrl: 'http://localhost:8888',
     adServerUrl: 'http://localhost:8090',
     pacingUrl: 'http://localhost:8095',
+    auditUrl: 'http://localhost:8096', // NUXT_AUDIT_URL
+    alertmanagerUrl: 'http://localhost:9093', // NUXT_ALERTMANAGER_URL
+    // Alertmanager's webhook (/api/alerts/webhook) must send this as a bearer token. NUXT_ALERT_WEBHOOK_TOKEN
+    alertWebhookToken: '',
+    // Web Push for alerts on installed apps. Generate keys with `npx web-push generate-vapid-keys`.
+    vapidPublicKey: '', // NUXT_VAPID_PUBLIC_KEY
+    vapidPrivateKey: '', // NUXT_VAPID_PRIVATE_KEY
+    vapidSubject: '', // NUXT_VAPID_SUBJECT, e.g. mailto:ops@example.com
+    pushStorePath: '.data/push-subscriptions.json', // NUXT_PUSH_STORE_PATH
+    pushAllowedHosts: '', // NUXT_PUSH_ALLOWED_HOSTS: extra push service hosts (tests)
     // Authentication (see README "Hosting"). On unless NUXT_AUTH_DISABLED=true; if on and
     // misconfigured, the API answers 503 instead of serving data.
     authUsers: '', // NUXT_AUTH_USERS: user=scrypt-hash,... from `npm run hash-password -- <user>`

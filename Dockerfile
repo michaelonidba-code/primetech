@@ -13,6 +13,7 @@ COPY openrtb openrtb
 COPY mock-dsp mock-dsp
 COPY ad-server ad-server
 COPY pacing-service pacing-service
+COPY audit-service audit-service
 RUN --mount=type=cache,target=/root/.m2 \
     --mount=type=secret,id=truststore,required=false \
     MAVEN_OPTS="$MAVEN_OPTS" mvn -B -q -DskipTests package
@@ -38,6 +39,10 @@ EXPOSE 8090
 FROM runtime-base AS pacing-service
 COPY --from=build /src/pacing-service/target/pacing-service.jar /app/app.jar
 EXPOSE 8095
+
+FROM runtime-base AS audit-service
+COPY --from=build /src/audit-service/target/audit-service.jar /app/app.jar
+EXPOSE 8096
 
 FROM runtime-base AS mock-dsp
 COPY --from=build /src/mock-dsp/target/mock-dsp.jar /app/app.jar

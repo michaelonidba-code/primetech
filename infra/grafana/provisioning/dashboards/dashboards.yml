@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: ads-eventing
+    folder: Ads Eventing
+    type: file
+    allowUiUpdates: false
+    options: { path: /var/lib/grafana/dashboards }

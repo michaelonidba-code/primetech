@@ -1,0 +1,33 @@
+# Alerts go to the dashboard, which shows them and pushes them to every device that installed
+# the app and turned notifications on. Add email, Slack or PagerDuty receivers alongside.
+route:
+  receiver: dashboard
+  group_by: [alertname, check, job]
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 6h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: dashboard
+      repeat_interval: 1h
+
+receivers:
+  - name: dashboard
+    webhook_configs:
+      - url: http://dashboard:3000/api/alerts/webhook
+        send_resolved: true
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /tmp/webhook-token
+
+# One cause, one notification: when the cause is already firing, hold back its symptoms.
+inhibit_rules:
+  - source_matchers: [alertname="FlinkJobNotRunning"]
+    target_matchers: [alertname=~"FlinkCheckpointsStalled|FlinkConsumerLagHigh|DeliveryDataStale|FlinkJobRestarting"]
+  - source_matchers: [alertname="ServiceDown", job="pacing-service"]
+    target_matchers: [alertname=~"PacingStateStale|AdServerOnPacingFallback"]
+  - source_matchers: [alertname="ServiceDown", job="flink"]
+    target_matchers: [alertname=~"FlinkCheckpointsStalled|FlinkConsumerLagHigh|DeliveryDataStale"]
+  - source_matchers: [alertname="KafkaPartitionsUnavailable"]
+    target_matchers: [alertname="IngestPublishFailures"]

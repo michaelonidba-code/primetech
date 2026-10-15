@@ -1,6 +1,8 @@
-// Every API route is read-only and requires a signed session cookie, except health, login and logout.
-const OPEN = new Set(['/api/health', '/api/auth/login', '/api/auth/logout'])
-const WRITES = new Set(['/api/auth/login', '/api/auth/logout'])
+// Every data route is read-only and requires a signed session cookie. The only writes are signing in
+// and out, (un)subscribing this device to notifications, and Alertmanager's webhook.
+// The alert webhook authenticates with its own bearer token (Alertmanager has no session).
+const OPEN = new Set(['/api/health', '/api/auth/login', '/api/auth/logout', '/api/alerts/webhook'])
+const WRITES = new Set(['/api/auth/login', '/api/auth/logout', '/api/alerts/webhook', '/api/push/subscribe', '/api/push/unsubscribe'])
 
 export default defineEventHandler((event) => {
   setResponseHeaders(event, {

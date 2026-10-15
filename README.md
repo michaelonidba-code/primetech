@@ -6,7 +6,8 @@ reporting with low latency. It is built to run on one machine with Docker Compos
 measured.
 
 This repository is being built in phases. **Phases 1 (event backbone), 2 (stream processing
-and real-time OLAP), 3 (ad serving with OpenRTB auctions) and 4 (budget pacing) are complete.**
+and real-time OLAP), 3 (ad serving with OpenRTB auctions), 4 (budget pacing) and 5 (audit and
+observability) are complete.**
 The dashboard installs as an app on desktop and phone and can be hosted behind HTTPS with
 sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 
@@ -30,8 +31,8 @@ sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 | 2. Stream processing | Flink: exactly-once dedup, enrichment, invalid-traffic detection, windowed aggregation with late data; Druid ingestion; reporting panels | ✅ Done |
 | 3. Ad serving | Ad server with direct demand and OpenRTB 2.6 auctions across three mock DSPs, frequency caps, decision log; simulator plays what it serves | ✅ Done |
 | 4. Pacing & budgets | Line item budgets and tiers, pacing service (closed-loop controller fed by Flink), served-spend counters, guaranteed priority | ✅ Done |
-| 5. Audit & observability | Reconciliation jobs, Prometheus/Grafana, alerts | Next |
-| 6. Load testing & write-up | Benchmarks, failure drills, design docs | Planned |
+| 5. Audit & observability | Continuous reconciliation service, Prometheus, Grafana, alert rules, Alertmanager, push notifications to the installed app, failure drills | ✅ Done |
+| 6. Load testing & write-up | Benchmarks at scale, design docs | Next |
 
 ## Quick start
 
@@ -48,6 +49,9 @@ docker compose up --build
 | Gateway API | http://localhost:8080 (`/v1/events`, `/stats`, `/metrics`, `/health`) |
 | Ad server API | http://localhost:8090 (`/v1/ad-requests`, `/stats`, `/metrics`, `/health`) |
 | Pacing service | http://localhost:8095 (`/stats`, `/metrics`, `/health`) |
+| Audit service | http://localhost:8096 (`/stats`, `/metrics`, `/health`) |
+| Grafana (dashboard "Ads Eventing: operations") | http://localhost:3001 |
+| Prometheus, Alertmanager | http://localhost:9090, http://localhost:9093 |
 | Flink web UI | http://localhost:8082 |
 | Druid console and SQL | http://localhost:8888 |
 | Redpanda Console (browse topics) | http://localhost:8081 |
@@ -83,6 +87,8 @@ cd dashboard && npm ci && npm run dev
 | `ad-server/` | Ad decisioning: direct line items + OpenRTB auction, frequency caps, decision log |
 | `mock-dsp/` | Configurable OpenRTB bidder: bid rate, value and latency distributions, bid shading |
 | `pacing-service/` | Budget pacing: a controller per line item, fed by Flink's delivered spend, steering the ad server through Redis |
+| `audit-service/` | Continuous reconciliation of independent records of the same money (Flink vs Druid, Redis vs the decision log, budgets, delivery) |
+| `infra/prometheus`, `infra/alertmanager`, `infra/grafana` | Scrape config, alert rules and their unit tests, routing and inhibition, provisioned dashboard |
 | `dashboard/` | Nuxt 4 app: gateway throughput, Flink health and Druid campaign delivery |
 | `infra/` | Topic creation script; Druid configuration and ingestion spec |
 
@@ -283,9 +289,9 @@ ones, respect floors and slot durations, and count win notices.
 ### The loop
 
 ```
-ad server ──served spend (INCRBY, immediate)──► Redis ◄──throttle, stop threshold── pacing service
-    ▲                                             │                                      ▲
-    └──── reads pacing state every second ────────┘                                      │
+ad server ──served spend (HSET, every 250 ms)──► Redis ◄──throttle, stop threshold── pacing service
+    ▲                                            │                                       ▲
+    └──── reads pacing state every second ───────┘                                       │
                                                                                          │
 player ─► gateway ─► Flink ─► line-item-minutes.v1 (delivered spend, exactly-once) ──────┘
 ```
@@ -303,7 +309,7 @@ player ─► gateway ─► Flink ─► line-item-minutes.v1 (delivered spend,
 
 | | Served spend (ad server, Redis) | Delivered spend (Flink minute totals) |
 |---|---|---|
-| Latency | immediate | ~70 s (minute window, watermark, checkpoint) |
+| Latency | immediate for an instance's own spend, ≤ 1 s for others' | ~70 s (minute window, watermark, checkpoint) |
 | Accuracy | overstates: some served ads are never played (1–4% of spend in the live run) | exact: de-duplicated, IVT excluded, exactly-once |
 | Used for | the control loop's feedback, stopping on time | budget accounting, what remaining budget means |
 
@@ -368,6 +374,53 @@ impression joined to its auction) gave 15 s.
 * **Traffic too thin for a budget:** the throttle reaches 1 and the line item reports
   `UNDER_DELIVERING`, instead of looking merely "behind".
 
+## Phase 5 design: audit and observability
+
+Two questions, answered separately:
+
+* **Is it running?** Metrics and alerts. Prometheus scrapes every service, Flink (its Prometheus
+  reporter) and Redpanda. 18 alert rules cover availability, ingest, ad serving, stream
+  processing, pacing, Kafka and the audit itself.
+* **Is the money right?** The audit service. A system can be up, fast and wrong. The audit
+  compares independent records of the same fact, continuously, and pages when they disagree.
+
+### The reconciliations
+
+| Check | Compares | Expected | Over |
+|---|---|---|---|
+| `flink-vs-druid` | Flink's exactly-once minute totals (impressions, spend) per line item and minute, against Druid's rollup of the clean event stream | exactly equal | the latest 30 minutes that can no longer change (older than the 10-minute allowed lateness plus 2) |
+| `served-vs-decision-log` | Served spend in Redis, which pacing steers by, against the sum of direct wins in the ad server's decision log | exactly equal | the last settled pacing period |
+| `budget-compliance` | Delivered spend per line item (Druid) against its budget | ≤ 101% | the last settled period |
+| `delivered-vs-served` | Played, valid spend against served spend | 85–102% | the last settled period |
+
+The two sides of each check come from different code paths: Flink windows versus Druid
+ingestion and SQL, and a Redis write versus a Kafka record. So a disagreement means one of them
+is wrong. Each run is a metric (`audit_check_ok`, `audit_check_mismatches`), a record on
+`audit-results.v1`, and an entry in the dashboard's audit panel, which names the line items that
+disagree. A check whose source is down reports an error and keeps its last verdict;
+`AuditNotCompleting` fires if nothing is verified for 20 minutes.
+
+### Alerts reach your phone
+
+```
+Prometheus ─rules─► Alertmanager ─webhook (bearer token)─► dashboard ─Web Push (VAPID, encrypted)─► installed app
+                     grouping, inhibition                    /api/alerts/webhook                     on each device
+```
+
+* **Turning on notifications.** In the app's Alerts panel, **Turn on notifications** subscribes
+  that device. On iPhone this works once the app is on the Home Screen (iOS 16.4 or later).
+* **Replacement.** A resolved alert replaces its own firing notification on the lock screen,
+  because both carry the same tag.
+* **Inhibition.** One cause, one notification. While the Flink job is down, its symptoms
+  (stalled checkpoints, consumer lag, stale delivery data) are held back. The same applies to
+  the pacing service: its symptoms are held back while it is down.
+* **Push endpoints are restricted** to the browsers' push services, so subscribing cannot be
+  used to make the server call internal addresses.
+* **The webhook is internal.** It takes a shared token, and Caddy refuses it from outside.
+
+Grafana is provisioned with one dashboard: health tiles, ingest, ad serving, stream processing,
+pacing, the audit checks, and firing alerts.
+
 ## Hosting the dashboard as an app
 
 The dashboard is an installable web app (PWA): from the browser it installs on Windows, macOS,
@@ -393,8 +446,12 @@ cd .. && docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml 
 ```
 
 Caddy obtains and renews a Let's Encrypt certificate for `DASHBOARD_DOMAIN`. The overlay
-publishes only ports 80 and 443; Kafka, Flink, Druid, the ad server and the pacing service are
-reachable only inside the Compose network.
+publishes only ports 80 and 443. Kafka, Flink, Druid, the services, Prometheus, Alertmanager and
+Grafana are reachable only inside the Compose network.
+
+For alert notifications on phones, also set `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY`
+(`npx web-push generate-vapid-keys`) and `ALERT_WEBHOOK_TOKEN`. To open Grafana, use an SSH
+tunnel to the host and point it at the `grafana` container, or publish it behind its own sign-in.
 
 ### Install
 
@@ -559,6 +616,48 @@ Run 1's overspend came from starting the stack late in a period (see the control
 Run 1's period after that one, started cleanly, was already within 3% of the even curve; the
 controller was right, the cold start and rollover were not.
 
+### Phase 5: audit and failure drills
+
+Full stack with the production overlay (Caddy, sign-in), 2,000 events/s, 10-minute periods. A
+stand-in "device" on the Compose network stood in for a phone: it subscribed through the real API,
+checked each push's VAPID signature, and decrypted the payload with its own keys. It received
+exactly what a phone would show.
+
+| Drill | Detected by | Fault → notification on the device | Recovery → "Resolved" |
+|---|---|---|---|
+| Stop the pacing service | `ServiceDown` (its symptoms inhibited) | **87 s** | 56 s |
+| Forge $5 of served spend in Redis for one line item | audit `served-vs-decision-log`, naming the line item and both amounts | **64 s** | 61 s |
+| Kill the Flink TaskManager | `FlinkJobRestarting` (49 s), then `ServiceDown` | **49 s** | 57 s |
+
+After the TaskManager kill, the audit compared the 30 settled minutes spanning the failure:
+**2,381 line item minutes, $15,757.89 of spend, Flink and Druid exactly equal.** Exactly-once
+held through the crash and restore. Across 30 consecutive audit rounds, every check stayed green
+except during the deliberate forgery.
+
+**What the audit found on its first real run:** the ad server's served-spend counters in Redis
+were **3–6% low for all 107 line items**, and **21 line items had overspent**, in the period when
+the stack started.
+* **Cause.** The ad server incremented Redis on every win and gave up after waiting 20 ms for a
+  connection. While everything warmed up, 4,744 increments were silently dropped in three minutes.
+  Pacing then believed less had been spent than really was, and stopped late.
+* **Fix.** Requests no longer touch Redis. Each instance keeps its own totals and a background
+  thread writes them every 250 ms, as absolute values in a hash field per instance (`HSET`, not
+  `INCRBY`). A failed or retried write can neither lose nor double-count spend.
+* **Test.** `ServedLedgerTest` covers it, including a write failing just before a read.
+* **On the next cold start:** counters equal to the decision log on all 107 line items, every line
+  item within budget (highest 91.1%), and 0 Redis errors.
+
+**Also fixed from the drills:**
+* **A stale-checkpoint page during recovery.** Once the "Flink is down" alert resolved, it no
+  longer held back the stale-checkpoint alert, which paged while the job was still restoring. The
+  rule now gives a restarted job 2 minutes, and a `promtool` test covers it.
+* **Fractional restart counts.** The restart alert said "3.007 times", because `increase()`
+  extrapolates. It now rounds.
+* **The checkpoint-age panel read "55 years".** Flink reports 0 before its first checkpoint, and
+  the panel now ignores it.
+* **The audit's Druid query used `minute` as a column alias.** That is a reserved word, and Druid
+  returned 400.
+
 ## API
 
 `POST /v1/events`
@@ -601,6 +700,10 @@ including Kafka producer and JVM metrics.
 | `DIRECT_PARTICIPATION`, `MAX_IN_FLIGHT`, `DSP_FREQUENCY_CAP_PER_HOUR` | ad server | `0.015` (fallback without pacing), `256`, `4` |
 | `DASHBOARD_AUTH_DISABLED`, `DASHBOARD_USERS`, `DASHBOARD_SESSION_SECRET` | dashboard (local Compose) | `true`, empty, empty. In production set via `deploy/.env` (see Hosting) |
 | `NUXT_SESSION_TTL_HOURS`, `NUXT_TRUST_PROXY` | dashboard | `12`, `false` (`true` in the production overlay) |
+| `ALERT_WEBHOOK_TOKEN` | Alertmanager, dashboard | a fixed local value; required in production |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | dashboard | empty: push notifications off |
+| `AUDIT_INTERVAL_SECONDS` | audit service | `60` |
+| `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_ANONYMOUS` | Grafana | `admin`, `true` locally; password required and anonymous off in production |
 | `PACING_PERIOD_MINUTES`, `BUDGET_SCALE` | ad server, pacing service | `30`, `1.0` (budgets sized for 30 min at ~2,000 events/s) |
 | `PACING_TICK_SECONDS` | pacing service | `10` |
 | `REDIS_URL`, `DEVICE_ID_SECRET` | ad server | unset = in-process caps; secret must match the gateway's |
@@ -616,6 +719,8 @@ including Kafka producer and JVM metrics.
 
 * `.github/workflows/ci.yml` runs the Maven build and tests, the dashboard typecheck and static
   build, and builds every Docker image.
+* CI also runs `promtool check config`, the alert-rule unit tests (`promtool test rules`, 8 cases)
+  and `amtool check-config`.
 * `.github/workflows/nuxtjs.yml` publishes a static build of the dashboard to GitHub Pages (enable
   Pages with source "GitHub Actions"). It has no server, so it talks to whichever gateway you
   give it with `?gateway=`, and the other panels say they need the stack. For the full app with
@@ -643,6 +748,12 @@ including Kafka producer and JVM metrics.
   changed. Login rate limits are in memory, per dashboard instance, and reset on restart.
 * The per-user login limit means someone who knows a user name can lock that user out for 15
   minutes with wrong passwords. That trade-off favours resisting password guessing.
+* Push delivery was verified end to end against a stand-in device that verifies VAPID and
+  decrypts payloads. It was not verified against Google's, Mozilla's or Apple's push services,
+  which this build environment cannot reach. Push subscriptions live in a JSON file on the
+  dashboard's volume, which suits one dashboard instance.
+* `FlinkJobRestarting` stays active for 10 minutes after a recovery, because it counts restarts
+  in a 10-minute window.
 * Druid's supervisor reports a lag of a few records per partition on the clean topic. Those are
   Kafka transaction markers, which a `read_committed` consumer never receives as records.
 * Flink operator metrics (duplicates dropped, IVT flagged) restart from zero when the job

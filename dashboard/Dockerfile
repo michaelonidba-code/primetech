@@ -15,6 +15,8 @@ COPY --from=build /app/.output ./.output
 COPY --from=build /app/scripts/hash-password.ts ./tools/scripts/
 COPY --from=build /app/server/utils/auth.ts ./tools/server/utils/
 ENV HOST=0.0.0.0 PORT=3000 NODE_ENV=production
+# Push subscriptions live here; a volume mounted on it inherits this ownership.
+RUN mkdir -p /app/.data && chown node:node /app/.data
 USER node
 EXPOSE 3000
 CMD ["node", ".output/server/index.mjs"]

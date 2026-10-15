@@ -35,3 +35,5 @@ create line-item-minutes.v1 6 cleanup.policy=compact,delete retention.ms=$WEEK
 create ad-decisions.v1 12 retention.ms=$WEEK compression.type=producer
 # Direct line item terms (tier, budget per period), read by the pacing service.
 create line-items.v1 1 cleanup.policy=compact
+# One record per audit check run (reconciliations between independent sources), kept 30 days.
+create audit-results.v1 1 retention.ms=2592000000

@@ -4,6 +4,7 @@ import dev.primetech.ads.common.Json;
 import dev.primetech.ads.common.catalog.LineItemConfig;
 import dev.primetech.ads.common.pacing.PacingPeriod;
 import dev.primetech.ads.common.pacing.PacingState;
+import dev.primetech.ads.common.pacing.ServedSpend;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
@@ -17,21 +18,18 @@ import redis.clients.jedis.JedisPooled;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
  * Pacing state from Redis, refreshed in the background once a second so requests never wait on it.
  *
- * <p>Served spend is counted in Redis (shared by every ad server instance) and locally. Between
- * refreshes, an instance adds its own increments to the last snapshot, so it notices its own
- * spending immediately; another instance's spending shows up within a second.
+ * <p>Served spend is shared through Redis without touching Redis on the request path: requests add
+ * to this instance's totals ({@link ServedLedger}), and the background thread writes them as
+ * absolute values every 250 ms and reads every instance's totals every second. An instance sees
+ * its own spending immediately and another instance's within about a second.
  *
  * <p>If pacing state is missing or stale (pacing service down), each line item falls back to a
  * small fixed throttle and a hard stop once its served spend reaches its budget. Every delivered
@@ -50,13 +48,13 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
     private final Counter fallbacks;
     private final Counter errors;
 
+    static final Duration WRITE_EVERY = Duration.ofMillis(250);
+    static final Duration READ_EVERY = Duration.ofSeconds(1);
+
     private volatile Map<String, PacingState> states = Map.of();
-    private volatile Map<String, Long> servedSnapshot = Map.of();
-    private volatile long snapshotPeriod = Long.MIN_VALUE;
-    /** This instance's served spend per line item and period, monotonic. */
-    private final Map<String, AtomicLong> localServed = new ConcurrentHashMap<>();
-    /** {@link #localServed} as it was just before the last snapshot was read. */
-    private volatile Map<String, Long> localAtSnapshot = Map.of();
+    private final ServedLedger ledger = new ServedLedger();
+    /** This instance's field in each served-spend hash: unique per process start. */
+    private final String instanceId;
     private final Thread refresher;
 
     public RedisPacingView(String url, PacingPeriod period, Collection<LineItemConfig> lineItems, double fallbackThrottle,
@@ -75,6 +73,8 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
         this.clock = clock;
         this.fallbacks = registry.counter("adserver.pacing.fallback");
         this.errors = registry.counter("adserver.pacing.errors");
+        this.instanceId = hostName() + "-" + Long.toHexString(System.nanoTime() ^ ProcessHandle.current().pid() << 32);
+        registry.gauge("adserver.served.unwritten.micros", ledger, ServedLedger::unwrittenMicros);
         refresh();
         this.refresher = Thread.ofPlatform().name("pacing-refresh").daemon().start(this::refreshLoop);
     }
@@ -101,44 +101,53 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
         return servedNow(lineItemId, periodIndex) >= stopAt ? 0 : throttle;
     }
 
+    /** Never touches Redis: the background thread writes the totals. */
     @Override
     public void served(String lineItemId, long priceMicros) {
-        long periodIndex = period.index(clock.getAsLong());
-        String key = PacingState.servedKey(periodIndex, lineItemId);
-        localServed.computeIfAbsent(key, k -> new AtomicLong()).addAndGet(priceMicros);
-        try {
-            try (var p = redis.pipelined()) {
-                p.incrBy(key, priceMicros);
-                p.expire(key, period.lengthMs() / 1000 * 2);
-                p.sync();
-            }
-        } catch (RuntimeException e) {
-            errors.increment();
-        }
+        ledger.add(PacingState.servedKey(period.index(clock.getAsLong()), lineItemId), priceMicros);
     }
 
-    /** Last shared total plus what this instance served since it was read. */
     long servedNow(String lineItemId, long periodIndex) {
-        String key = PacingState.servedKey(periodIndex, lineItemId);
-        AtomicLong mine = localServed.get(key);
-        long local = mine == null ? 0 : mine.get();
-        if (snapshotPeriod != periodIndex) {
-            return local;
-        }
-        return servedSnapshot.getOrDefault(lineItemId, 0L) + local - localAtSnapshot.getOrDefault(key, 0L);
+        return ledger.served(periodIndex, lineItemId, PacingState.servedKey(periodIndex, lineItemId));
     }
 
     private void refreshLoop() {
+        long lastRead = System.nanoTime();
         while (!Thread.currentThread().isInterrupted()) {
             try {
-                Thread.sleep(1_000);
+                Thread.sleep(WRITE_EVERY.toMillis());
             } catch (InterruptedException e) {
+                flush(); // what was served last must not be lost on shutdown
                 return;
             }
-            refresh();
+            flush();
+            if (System.nanoTime() - lastRead >= READ_EVERY.toNanos()) {
+                refresh();
+                lastRead = System.nanoTime();
+            }
         }
     }
 
+    /** Writes this instance's totals as absolute values: retrying after a failure is always safe. */
+    void flush() {
+        Map<String, Long> totals = ledger.unwritten();
+        if (totals.isEmpty()) {
+            return;
+        }
+        try (var p = redis.pipelined()) {
+            long ttlSeconds = period.lengthMs() / 1000 * 2;
+            totals.forEach((key, value) -> {
+                p.hset(key, instanceId, Long.toString(value));
+                p.expire(key, ttlSeconds);
+            });
+            p.sync();
+            ledger.written(totals);
+        } catch (RuntimeException e) {
+            errors.increment(); // kept in the ledger; the next write carries the full totals
+        }
+    }
+
+    /** Reads pacing state and every instance's served totals. Runs on the writing thread, right after a write. */
     void refresh() {
         try {
             var parsed = new HashMap<String, PacingState>();
@@ -150,21 +159,11 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
                 }
             }
             long periodIndex = period.index(clock.getAsLong());
-            List<String> ids = new ArrayList<>(configs.keySet());
-            // Captured before reading Redis: increments in between are counted twice (stopping a
-            // little early) rather than not at all.
-            var localBefore = new HashMap<String, Long>();
-            localServed.forEach((k, v) -> localBefore.put(k, v.get()));
-            List<String> values = redis.mget(ids.stream().map(id -> PacingState.servedKey(periodIndex, id)).toArray(String[]::new));
-            var served = new HashMap<String, Long>();
-            for (int i = 0; i < ids.size(); i++) {
-                served.put(ids.get(i), values.get(i) == null ? 0L : Long.parseLong(values.get(i)));
-            }
+            Map<String, Long> totals = ServedSpend.read(redis, periodIndex, configs.keySet());
             states = parsed;
-            localAtSnapshot = localBefore;
-            servedSnapshot = served;
-            snapshotPeriod = periodIndex;
-            localServed.keySet().removeIf(k -> !k.startsWith("pacing:served:" + periodIndex + ":"));
+            String prefix = PacingState.servedKey(periodIndex, "");
+            ledger.snapshot(periodIndex, totals, prefix);
+            ledger.prune(prefix);
         } catch (RuntimeException e) {
             errors.increment();
             log.debug("pacing refresh failed: {}", e.toString());
@@ -190,6 +189,19 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
     @Override
     public void close() {
         refresher.interrupt();
+        try {
+            refresher.join(2_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         redis.close();
+    }
+
+    private static String hostName() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (java.io.IOException e) {
+            return "ad-server";
+        }
     }
 }

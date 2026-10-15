@@ -10,5 +10,8 @@
 
 	# Caddy replaces any client-supplied X-Forwarded-For/-Proto, so the dashboard
 	# (NUXT_TRUST_PROXY=true) sees the real client address for login rate limits.
+	# Alertmanager calls the alert webhook inside the Compose network; it is never public.
+	respond /api/alerts/webhook 404
+
 	reverse_proxy dashboard:3000
 }

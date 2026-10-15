@@ -15,6 +15,8 @@ public final class Topics {
     public static final String AD_DECISIONS = "ad-decisions.v1";
     /** Direct line item terms (tier, budget), compacted, keyed by line item id. */
     public static final String LINE_ITEMS = "line-items.v1";
+    /** Results of the audit service's reconciliations, one record per check run. */
+    public static final String AUDIT_RESULTS = "audit-results.v1";
 
     private Topics() {
     }

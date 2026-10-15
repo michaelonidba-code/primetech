@@ -48,4 +48,22 @@ jobs:
       - name: Validate the production overlay
         run: >
           DASHBOARD_DOMAIN=ci.example DASHBOARD_USERS=ci=x DASHBOARD_SESSION_SECRET=x
+          ALERT_WEBHOOK_TOKEN=x GRAFANA_ADMIN_PASSWORD=x
           docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml config --quiet
+
+  observability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prometheus config and alert rules
+        run: >
+          docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" --entrypoint promtool
+          prom/prometheus:v3.5.0 check config /etc/prometheus/prometheus.yml
+      - name: Alert rule unit tests
+        run: >
+          docker run --rm -v "$PWD/infra/prometheus:/etc/prometheus:ro" -w /etc/prometheus/tests --entrypoint promtool
+          prom/prometheus:v3.5.0 test rules ads-eventing-test.yml
+      - name: Alertmanager config
+        run: >
+          docker run --rm -v "$PWD/infra/alertmanager:/etc/alertmanager:ro" --entrypoint amtool
+          prom/alertmanager:v0.28.1 check-config /etc/alertmanager/alertmanager.yml
