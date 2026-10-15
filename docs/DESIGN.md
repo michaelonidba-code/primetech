@@ -130,24 +130,23 @@ Flink-versus-Druid check stayed exact at every step.
 ## Bugs that only measurement found
 
 None of these failed a unit test; each was found by reconciling or measuring the running
-system, and each now has a test:
+system. Each is fixed, and most now have a unit or alert-rule test that reproduces them:
 
 1. **Late-window spam.** One minute was revised 217 times by late events. Fixed with a coalescing trigger.
 2. **Flink lost event time** on records released from broadcast state, so they missed their windows.
 3. **A replayed run looked like data loss.** `SEED` was not passed to the simulator, so event IDs repeated and were correctly de-duplicated.
 4. **The ad server hung under overload**: unbounded work, 13,062 abandoned connections, file descriptors exhausted.
 5. **The campaign catalog was never published** (`max.block.ms=0` failed every send until metadata arrived); 82k events went unenriched.
-6. **Second-price auctions overcharged** sole bidders by a cent.
-7. **Pacing overspent by up to 51% after a cold start**, from chasing a partial period and carrying a throttle across the boundary.
-8. **A guessed constant under-delivered by 6%**: serve-to-play delay assumed 30 s, measured 15 s.
-9. **The pacing fallback could have overspent by 20%**: it assumed 20% of served ads go unplayed; the live figure was 1–4%.
-10. **Served-spend increments were dropped under load**: counters 3–6% low and 21 line items over budget, found by the audit on its first run.
-11. **A stale-checkpoint page during recovery**, after inhibition lifted.
-12. **A full disk took the system down without an alert naming it.** Topics were retained by time
+6. **Pacing overspent by up to 51% after a cold start**, from chasing a partial period and carrying a throttle across the boundary.
+7. **A guessed constant under-delivered by 6%**: serve-to-play delay assumed 30 s, measured 15 s.
+8. **The pacing fallback could have overspent by 20%**: it assumed 20% of served ads go unplayed; the live figure was 1–4%.
+9. **Served-spend increments were dropped under load**: counters 3–6% low and 21 line items over budget, found by the audit on its first run.
+10. **A stale-checkpoint page during recovery**, after inhibition lifted.
+11. **A full disk took the system down without an alert naming it.** Topics were retained by time
     only, so a load test filled the disk; Redpanda crashed and Flink restarted in a loop. The
-    restart grace from item 11 also hid the crash loop. Now: size-based retention, a disk alert on
+    restart grace from item 10 also hid the crash loop. Now: size-based retention, a disk alert on
     free bytes, and critical alerts for failing checkpoints and crash loops.
-13. **Flink spent 14% of its CPU compressing tiny Kafka batches** (found with a Flight Recorder
+12. **Flink spent 14% of its CPU compressing tiny Kafka batches** (found with a Flight Recorder
     profile). Larger batches cost no visible latency under exactly-once: +7% throughput.
 
 ## Capacity
@@ -199,5 +198,5 @@ and running the ad server and DSP calls on their own machines.
 * **Billing-grade reporting.** Daily batch recomputation from the raw topic (or a lakehouse
   copy) as the invoice of record, with the streaming totals as the fast estimate, reconciled.
 * **Identity and access.** SSO for the dashboard instead of local users, per-advertiser data access.
-* **Load tests on real hardware.** The numbers below come from one 4-vCPU machine running all
+* **Load tests on real hardware.** The numbers above come from one 4-vCPU machine running all
   twenty-odd containers; the per-core figures matter more than the totals.
