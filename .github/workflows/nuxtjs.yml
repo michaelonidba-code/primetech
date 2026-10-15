@@ -44,6 +44,8 @@ jobs:
         env:
           # Project pages are served under /<repo>/.
           NUXT_APP_BASE_URL: ${{ steps.pages.outputs.base_path }}/
+          # No server on Pages: the browser calls a gateway itself (?gateway=<url>).
+          NUXT_PUBLIC_GATEWAY_MODE: direct
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

@@ -18,24 +18,29 @@ export interface RatePoint {
 
 const HISTORY_POINTS = 150 // 5 minutes at the default 2s poll
 
-/** Polls the gateway's /stats endpoint and derives event rates from successive counters. */
+/**
+ * Polls the gateway's counters and derives event rates from successive snapshots: through this
+ * server's /api/gateway (Node builds), or from the gateway directly (static build, ?gateway=<url>).
+ */
 export function useGatewayStats() {
   const config = useRuntimeConfig().public
   const route = useRoute()
+  const session = useSession()
+  const direct = computed(() => Boolean(route.query.gateway) || config.gatewayMode === 'direct')
   const gatewayUrl = computed(() =>
     String(route.query.gateway || config.gatewayUrl).replace(/\/+$/, ''),
   )
+  const statsUrl = computed(() => (direct.value ? `${gatewayUrl.value}/stats` : '/api/gateway'))
 
   const latest = ref<GatewaySnapshot | null>(null)
   const history = ref<RatePoint[]>([])
   const status = ref<'connecting' | 'up' | 'down'>('connecting')
   const lastError = ref('')
   let previous: GatewaySnapshot | null = null
-  let timer: ReturnType<typeof setInterval> | undefined
 
   async function poll() {
     try {
-      const snap = await $fetch<GatewaySnapshot>(`${gatewayUrl.value}/stats`, { timeout: 1500 })
+      const snap = await $fetch<GatewaySnapshot>(statsUrl.value, { timeout: 2000 })
       if (previous) {
         const dt = (snap.timestampMs - previous.timestampMs) / 1000
         const delta = snap.accepted - previous.accepted
@@ -51,14 +56,11 @@ export function useGatewayStats() {
     } catch (err) {
       status.value = 'down'
       lastError.value = err instanceof Error ? err.message : String(err)
+      session.noteError(err)
     }
   }
 
-  onMounted(() => {
-    poll()
-    timer = setInterval(poll, Number(config.pollMs))
-  })
-  onBeforeUnmount(() => clearInterval(timer))
+  useVisibleInterval(poll, Number(config.pollMs))
 
   const currentEps = computed(() => history.value.at(-1)?.eps ?? 0)
   const rejectionRate = computed(() => {
@@ -67,5 +69,5 @@ export function useGatewayStats() {
     return s.rejected / (s.accepted + s.rejected)
   })
 
-  return { gatewayUrl, latest, history, status, lastError, currentEps, rejectionRate }
+  return { direct, gatewayUrl, latest, history, status, lastError, currentEps, rejectionRate }
 }
