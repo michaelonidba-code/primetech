@@ -189,6 +189,9 @@ public final class AdDecisionService {
                     c.durationSeconds(), c.bidCpmMicros(), w.clearingCpmMicros(), w.eligibleCandidates()));
             wonCampaigns.add(c.campaignId());
             metrics.win(c.source(), priceMicros);
+            if (c.isDirect()) {
+                direct.served(c.lineItemId(), priceMicros);
+            }
             if (!c.isDirect()) {
                 // DSPs only tell us the campaign id and advertiser domain; name the campaign by its id.
                 String dspCampaign = c.campaignId().substring(c.campaignId().indexOf(':') + 1);
@@ -242,6 +245,6 @@ public final class AdDecisionService {
         String campaignId = dsp + ":" + bid.cid();
         String creativeId = dsp + ":" + bid.crid();
         return new Candidate(dsp, bid.impid(), campaignId, campaignId, creativeId, creativeId, bid.adomain().get(0),
-                bid.dur(), OpenRtb.cpmToMicros(bid.price()), settings.dspFrequencyCapPerHour(), bid.nurl());
+                bid.dur(), OpenRtb.cpmToMicros(bid.price()), settings.dspFrequencyCapPerHour(), bid.nurl(), false);
     }
 }

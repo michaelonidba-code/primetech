@@ -58,6 +58,8 @@ const rejectionRows = computed(() =>
 
     <AdServingPanel />
 
+    <PacingPanel />
+
     <PipelinePanel />
 
     <section class="card">

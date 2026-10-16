@@ -57,7 +57,7 @@ class AdServerHttpTest {
                 DspClient.sharedHttpClient());
         var service = new AdDecisionService(
                 new AdDecisionService.Settings(5, Duration.ofMillis(700), 5_000_000, BidRequest.FIRST_PRICE, 4),
-                new DirectDemand(AdCatalog.generate(10, new SplittableRandom(1)), 1.0), List.of(dsp),
+                new DirectDemand(AdCatalog.generate(10, new SplittableRandom(1)), PacingView.fixed(1.0)), List.of(dsp),
                 new InMemoryFrequencyCaps(), new AdDecisionServiceTest.RecordingSink(),
                 new DeviceIdHasher("test-secret-0123456789"), metrics);
         server = new AdServerHttp(0, service, metrics, registry, "*", maxInFlight);

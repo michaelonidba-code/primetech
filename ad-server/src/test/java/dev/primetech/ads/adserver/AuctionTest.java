@@ -13,12 +13,12 @@ class AuctionTest {
 
     static Candidate direct(String advertiser, long cpm, int seconds) {
         return new Candidate(Candidate.DIRECT, null, "camp-" + advertiser, "li-" + advertiser, "ad-" + advertiser,
-                "cr-" + advertiser + "-" + seconds, advertiser, seconds, cpm, 3, null);
+                "cr-" + advertiser + "-" + seconds, advertiser, seconds, cpm, 3, null, false);
     }
 
     static Candidate dsp(String dsp, int slot, String advertiser, long cpm, int seconds) {
         return new Candidate(dsp, String.valueOf(slot), dsp + ":" + advertiser, dsp + ":" + advertiser,
-                dsp + ":cr-" + advertiser, dsp + ":cr-" + advertiser + slot, advertiser, seconds, cpm, 4, "http://win");
+                dsp + ":cr-" + advertiser, dsp + ":cr-" + advertiser + slot, advertiser, seconds, cpm, 4, "http://win", false);
     }
 
     private static List<Auction.Winner> run(int slots, int podSeconds, Map<Integer, List<Candidate>> bySlot, int type) {
@@ -86,6 +86,19 @@ class AuctionTest {
 
         assertThat(winners).extracting(w -> w.candidate().advertiserId()).containsExactly("a", "c");
         assertThat(winners.stream().mapToInt(w -> w.candidate().durationSeconds()).sum()).isLessThanOrEqualTo(45);
+    }
+
+    @Test
+    void guaranteedLineItemsWinAheadOfHigherBids() {
+        var sponsor = new Candidate(Candidate.DIRECT, null, "camp-g", "li-g", "ad-g", "cr-g", "g", 15, 25_000_000, 3,
+                null, true);
+        var winners = run(2, 60, Map.of(
+                1, List.of(dsp("dsp", 1, "b", 80_000_000, 15), sponsor),
+                2, List.of(dsp("dsp", 2, "b", 80_000_000, 15), sponsor)), BidRequest.FIRST_PRICE);
+
+        assertThat(winners.get(0).candidate().guaranteed()).isTrue();
+        assertThat(winners.get(0).clearingCpmMicros()).as("pays its contracted CPM").isEqualTo(25_000_000);
+        assertThat(winners.get(1).candidate().advertiserId()).as("separation still applies").isEqualTo("b");
     }
 
     @Test

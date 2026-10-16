@@ -4,6 +4,7 @@ import dev.primetech.ads.common.CampaignMetadata;
 import dev.primetech.ads.common.Json;
 import dev.primetech.ads.common.Topics;
 import dev.primetech.ads.common.adserving.AdDecision;
+import dev.primetech.ads.common.catalog.LineItemConfig;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -49,6 +50,7 @@ public final class KafkaDecisionSink implements DecisionSink {
         failures = registry.counter("adserver.log.failures");
         warmUp(Topics.AD_DECISIONS, Duration.ofSeconds(60));
         warmUp(Topics.CAMPAIGN_METADATA, Duration.ofSeconds(60));
+        warmUp(Topics.LINE_ITEMS, Duration.ofSeconds(60));
     }
 
     /** Fetches a topic's partitions before serving, retrying while the broker comes up. */
@@ -80,6 +82,11 @@ public final class KafkaDecisionSink implements DecisionSink {
     @Override
     public CompletableFuture<Void> campaign(CampaignMetadata campaign) {
         return send(Topics.CAMPAIGN_METADATA, campaign.campaignId(), campaign);
+    }
+
+    @Override
+    public CompletableFuture<Void> lineItem(LineItemConfig lineItem) {
+        return send(Topics.LINE_ITEMS, lineItem.lineItemId(), lineItem);
     }
 
     private CompletableFuture<Void> send(String topic, String key, Object value) {

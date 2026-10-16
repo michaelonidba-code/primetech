@@ -19,16 +19,21 @@ import java.util.function.IntFunction;
  *   <li>the ads must fit the break's total length.</li>
  * </ul>
  *
- * Direct line items pay their contracted CPM. DSP winners pay their bid in a first-price auction,
+ * Guaranteed line items (sponsorships) take a slot ahead of the auction whenever pacing lets them
+ * compete; the auction only prices what is left. Direct line items pay their contracted CPM. DSP winners pay their bid in a first-price auction,
  * or the next highest eligible bid plus one cent (never less than the floor, never more than their
  * bid) in a second-price auction.
  */
 public final class Auction {
     static final long ONE_CENT_CPM_MICROS = 10_000;
 
-    /** Highest offer first; ties go to direct demand, then a stable order so results are repeatable. */
+    /**
+     * Guaranteed line items first (priority tier, regardless of price), then highest offer; ties go
+     * to direct demand, then a stable order so results are repeatable.
+     */
     private static final Comparator<Candidate> RANKING = Comparator
-            .comparingLong(Candidate::bidCpmMicros).reversed()
+            .comparing((Candidate c) -> !c.guaranteed())
+            .thenComparing(Comparator.comparingLong(Candidate::bidCpmMicros).reversed())
             .thenComparing(c -> !c.isDirect())
             .thenComparing(Candidate::creativeId);
 

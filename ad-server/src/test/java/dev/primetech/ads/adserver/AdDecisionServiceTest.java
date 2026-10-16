@@ -48,6 +48,11 @@ class AdDecisionServiceTest {
         }
 
         @Override
+        public CompletableFuture<Void> lineItem(dev.primetech.ads.common.catalog.LineItemConfig lineItem) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
         public CompletableFuture<Void> campaign(CampaignMetadata campaign) {
             if (failNextCampaigns > 0) {
                 failNextCampaigns--;
@@ -95,13 +100,45 @@ class AdDecisionServiceTest {
     }
 
     private AdDecisionService service(Map<String, URI> dsps, int auctionType, int campaigns) {
+        var catalog = AdCatalog.generate(campaigns, new SplittableRandom(42));
+        // Standard line items always compete; guaranteed ones (which would take every slot) only when
+        // the catalog is too small to have standard ones (the first five campaigns are guaranteed).
+        if (campaigns <= 5) {
+            return service(dsps, auctionType, catalog, new RecordingPacing(id -> 1.0));
+        }
+        var guaranteed = catalog.lineItems().stream()
+                .filter(l -> l.tier() == dev.primetech.ads.common.catalog.LineItemConfig.Tier.GUARANTEED)
+                .map(dev.primetech.ads.common.catalog.LineItemConfig::lineItemId).collect(java.util.stream.Collectors.toSet());
+        return service(dsps, auctionType, catalog, new RecordingPacing(id -> guaranteed.contains(id) ? 0.0 : 1.0));
+    }
+
+    /** Pacing with fixed throttles that records what was charged. */
+    static final class RecordingPacing implements PacingView {
+        final java.util.function.ToDoubleFunction<String> throttles;
+        final Map<String, Long> charged = new java.util.concurrent.ConcurrentHashMap<>();
+
+        RecordingPacing(java.util.function.ToDoubleFunction<String> throttles) {
+            this.throttles = throttles;
+        }
+
+        @Override
+        public double throttle(String lineItemId) {
+            return throttles.applyAsDouble(lineItemId);
+        }
+
+        @Override
+        public void served(String lineItemId, long priceMicros) {
+            charged.merge(lineItemId, priceMicros, Long::sum);
+        }
+    }
+
+    private AdDecisionService service(Map<String, URI> dsps, int auctionType, AdCatalog catalog, PacingView pacing) {
         var http = DspClient.sharedHttpClient();
         var clients = new ArrayList<DspClient>();
         dsps.forEach((name, uri) -> clients.add(new DspClient(name, uri, http)));
         metrics = new AdServerMetrics(new PrometheusMeterRegistry(PrometheusConfig.DEFAULT), new ArrayList<>(dsps.keySet()));
-        var catalog = AdCatalog.generate(campaigns, new SplittableRandom(42));
         return new AdDecisionService(new AdDecisionService.Settings(5, Duration.ofMillis(150), 5_000_000, auctionType, 2),
-                new DirectDemand(catalog, 1.0), clients, new InMemoryFrequencyCaps(), sink,
+                new DirectDemand(catalog, pacing), clients, new InMemoryFrequencyCaps(), sink,
                 new DeviceIdHasher("test-secret-0123456789"), metrics);
     }
 
@@ -189,6 +226,31 @@ class AdDecisionServiceTest {
         assertThat(service.announce(List.of(campaign))).isCompleted();
         service.announce(List.of(campaign));
         assertThat(sink.campaigns).as("announced once it succeeds, then not again").hasSize(1);
+    }
+
+    @Test
+    void guaranteedLineItemsTakeTheFirstSlotsAndAreChargedToTheirBudget() throws Exception {
+        var catalog = AdCatalog.generate(20, new SplittableRandom(42));
+        var pacing = new RecordingPacing(id -> 1.0);
+        var service = service(Map.of("good-dsp", goodDsp(80)), BidRequest.FIRST_PRICE, catalog, pacing);
+
+        AdResponse response = service.decide(request("device-g", 2));
+
+        var guaranteedIds = catalog.lineItems().stream()
+                .filter(l -> l.tier() == dev.primetech.ads.common.catalog.LineItemConfig.Tier.GUARANTEED)
+                .map(dev.primetech.ads.common.catalog.LineItemConfig::lineItemId).toList();
+        assertThat(response.ads()).as("sponsors beat $80 bids").allSatisfy(a -> assertThat(guaranteedIds).contains(a.lineItemId()));
+        for (var ad : response.ads()) {
+            assertThat(pacing.charged.get(ad.lineItemId())).isEqualTo(ad.priceMicros());
+        }
+    }
+
+    @Test
+    void aSpentLineItemNoLongerCompetes() {
+        var catalog = AdCatalog.generate(1, new SplittableRandom(42));
+        var service = service(Map.of(), BidRequest.FIRST_PRICE, catalog, new RecordingPacing(id -> 0.0));
+
+        assertThat(service.decide(request("device-x", 2)).ads()).isEmpty();
     }
 
     @Test

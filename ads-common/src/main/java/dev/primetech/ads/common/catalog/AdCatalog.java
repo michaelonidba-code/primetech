@@ -43,19 +43,26 @@ public final class AdCatalog {
             "Kestrel Apparel", "Bluestem Grocers"};
     private static final String[] OBJECTIVES = {"Awareness", "Launch", "Seasonal", "Retargeting", "Brand Lift"};
 
+    /** Campaigns of the largest advertisers carry guaranteed (sponsorship) line items. */
+    static final int GUARANTEED_CAMPAIGNS = 5;
+
     private final List<AdSpec> ads;
     private final List<CampaignMetadata> campaigns;
+    private final List<LineItemConfig> lineItems;
     private final double[] cumulativeWeights;
 
-    private AdCatalog(List<AdSpec> ads, List<CampaignMetadata> campaigns, double[] cumulativeWeights) {
+    private AdCatalog(List<AdSpec> ads, List<CampaignMetadata> campaigns, List<LineItemConfig> lineItems,
+                      double[] cumulativeWeights) {
         this.ads = ads;
         this.campaigns = campaigns;
+        this.lineItems = lineItems;
         this.cumulativeWeights = cumulativeWeights;
     }
 
     public static AdCatalog generate(int campaigns, RandomGenerator random) {
         var ads = new ArrayList<AdSpec>();
         var metadata = new ArrayList<CampaignMetadata>();
+        var lineItemConfigs = new ArrayList<LineItemConfig>();
         var weights = new ArrayList<Double>();
         for (int c = 0; c < campaigns; c++) {
             String campaignId = "camp-%04d".formatted(c);
@@ -75,6 +82,12 @@ public final class AdCatalog {
                 Set<String> countries = random.nextDouble() < 0.3 ? Set.of("US") : Set.of();
                 Set<DeviceType> devices = random.nextDouble() < 0.2 ? EnumSet.of(DeviceType.CTV) : EnumSet.noneOf(DeviceType.class);
                 int frequencyCap = 2 + random.nextInt(3);
+                // Budgets per pacing period, in dollars: sponsorships are larger and fewer.
+                boolean guaranteed = c < GUARANTEED_CAMPAIGNS;
+                long budgetDollars = guaranteed ? 150 + random.nextInt(151) : 20 + random.nextInt(61);
+                lineItemConfigs.add(new LineItemConfig(lineItemId, campaignId, advertiserId,
+                        guaranteed ? LineItemConfig.Tier.GUARANTEED : LineItemConfig.Tier.STANDARD,
+                        cpmMicros, budgetDollars * 1_000_000L));
                 for (int k = 0; k < creatives; k++) {
                     String creativeId = "%s-cr-%d".formatted(lineItemId, k);
                     String adId = "ad-%s".formatted(creativeId.substring("camp-".length()));
@@ -91,7 +104,7 @@ public final class AdCatalog {
             sum += weights.get(i);
             cumulative[i] = sum;
         }
-        return new AdCatalog(List.copyOf(ads), List.copyOf(metadata), cumulative);
+        return new AdCatalog(List.copyOf(ads), List.copyOf(metadata), List.copyOf(lineItemConfigs), cumulative);
     }
 
     public AdSpec pick(RandomGenerator random) {
@@ -114,5 +127,9 @@ public final class AdCatalog {
 
     public List<CampaignMetadata> campaigns() {
         return campaigns;
+    }
+
+    public List<LineItemConfig> lineItems() {
+        return lineItems;
     }
 }
