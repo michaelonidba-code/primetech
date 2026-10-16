@@ -443,6 +443,9 @@ phone / desktop app ──HTTPS──► Caddy ──► dashboard (Nuxt server)
 
 ### Deploy
 
+**Step by step, with a one-command installer:** [deploy/DEPLOY.md](deploy/DEPLOY.md)
+(`sudo ./deploy/install.sh <domain>` on a fresh Ubuntu or Debian server). By hand:
+
 On a host with Docker, about 10 GB of memory for the stack, and a DNS name pointing at it with
 ports 80 and 443 open:
 
