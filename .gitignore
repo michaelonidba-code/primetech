@@ -1,0 +1,14 @@
+# Java
+target/
+*.iml
+.idea/
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+.data/
+dist
+
+.env
+.DS_Store
