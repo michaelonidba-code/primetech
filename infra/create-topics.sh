@@ -31,3 +31,5 @@ create ad-events-clean.v1 12 retention.ms=$WEEK compression.type=producer
 # Upsert stream of minute totals: compaction keeps the latest revision of each line item minute,
 # deletion drops minutes older than a week.
 create line-item-minutes.v1 6 cleanup.policy=compact,delete retention.ms=$WEEK
+# Ad server audit log: one record per ad request, joined to events by auction id.
+create ad-decisions.v1 12 retention.ms=$WEEK compression.type=producer

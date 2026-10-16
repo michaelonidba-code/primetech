@@ -5,23 +5,29 @@ ingesting billions of playback events, processing them in a stream, pacing budge
 reporting with low latency. It is built to run on one machine with Docker Compose, and to be
 measured.
 
-This repository is being built in phases. **Phases 1 (event backbone) and 2 (stream
-processing and real-time OLAP) are complete.**
+This repository is being built in phases. **Phases 1 (event backbone), 2 (stream processing
+and real-time OLAP) and 3 (ad serving with OpenRTB auctions) are complete.**
 
 ```
- Player SDKs ─► Ingest Gateway ─► Kafka ─────────► Flink ───────────────────► Kafka ──────────────► Druid ─► Dashboard
- (simulator)    validate, scrub   ad-events.v1     dedup by event id          ad-events-clean.v1    rollup   (Nuxt)
-                ack when durable  ad-events-dlq.v1 enrich (broadcast)         line-item-minutes.v1  per min
-                                  campaign-        flag invalid traffic       (exactly-once,
-                                  metadata.v1 ───► 1-min windows + lateness    transactional)
+                 ┌────────────── OpenRTB 2.6 ──────────────┐
+                 ▼                                          │
+            3 mock DSPs                                     │
+                 │ bids                                     │
+ Player ─ad request─► Ad Server ── decision log ──► Kafka: ad-decisions.v1
+ (simulator) ◄─pod──  auction, caps (Redis), floors          campaign-metadata.v1 ──┐
+    │                                                                               │
+    └─tracking events─► Ingest Gateway ─► Kafka ─► Flink ─► Kafka ────────────────► Druid ─► Dashboard
+                        validate, scrub   ad-      dedup, enrich, IVT,   ad-events-clean.v1   rollup   (Nuxt)
+                        ack when durable  events   1-min windows         line-item-minutes.v1 per min
+                                          .v1      (exactly-once)
 ```
 
 | Phase | Scope | Status |
 |---|---|---|
 | 1. Event backbone | Event schema, ingest gateway, Kafka topics, traffic simulator, live dashboard | ✅ Done |
 | 2. Stream processing | Flink: exactly-once dedup, enrichment, invalid-traffic detection, windowed aggregation with late data; Druid ingestion; reporting panels | ✅ Done |
-| 3. Ad serving | Ad decisioning, OpenRTB 2.6 auctions against mock DSPs, frequency caps | Next |
-| 4. Pacing & budgets | Redis spend counters, PID pacing loop fed by Flink | Planned |
+| 3. Ad serving | Ad server with direct demand and OpenRTB 2.6 auctions across three mock DSPs, frequency caps, decision log; simulator plays what it serves | ✅ Done |
+| 4. Pacing & budgets | Redis spend counters, PID pacing loop fed by Flink, guaranteed line items | Next |
 | 5. Audit & observability | Reconciliation against simulator ground truth, Prometheus/Grafana, alerts | Planned |
 | 6. Load testing & write-up | Benchmarks, failure drills, design docs | Planned |
 
@@ -38,6 +44,7 @@ docker compose up --build
 |---|---|
 | Dashboard | http://localhost:3000 |
 | Gateway API | http://localhost:8080 (`/v1/events`, `/stats`, `/metrics`, `/health`) |
+| Ad server API | http://localhost:8090 (`/v1/ad-requests`, `/stats`, `/metrics`, `/health`) |
 | Flink web UI | http://localhost:8082 |
 | Druid console and SQL | http://localhost:8888 |
 | Redpanda Console (browse topics) | http://localhost:8081 |
@@ -65,10 +72,13 @@ cd dashboard && npm ci && npm run dev
 
 | Path | What it is |
 |---|---|
-| `ads-common/` | Event model (`ClientEvent` in, `AdEvent` out), validation rules, device-id pseudonymisation |
+| `ads-common/` | Event model (`ClientEvent` in, `AdEvent` out), validation rules, device-id pseudonymisation, campaign catalog, ad request/response and decision records |
 | `ingest-gateway/` | HTTP edge service: validates, scrubs, writes to Kafka, exposes metrics |
 | `event-simulator/` | Realistic, deliberately messy player traffic (duplicates, late events, bots) with a ground-truth tally; publishes the campaign catalog |
 | `stream-processor/` | Flink 2.2 job: dedup, enrichment, IVT, minute totals, exactly-once Kafka output |
+| `openrtb/` | OpenRTB 2.6 bid request/response model (the CTV ad pod subset) |
+| `ad-server/` | Ad decisioning: direct line items + OpenRTB auction, frequency caps, decision log |
+| `mock-dsp/` | Configurable OpenRTB bidder: bid rate, value and latency distributions, bid shading |
 | `dashboard/` | Nuxt 4 app: gateway throughput, Flink health and Druid campaign delivery |
 | `infra/` | Topic creation script; Druid configuration and ingestion spec |
 
@@ -135,8 +145,9 @@ checked against exact numbers:
 |---|---|---|---|---|
 | `ad-events.v1` | 12 | 7 days | `sessionId` | gateway |
 | `ad-events-dlq.v1` | 3 | 14 days | `eventId` | gateway |
-| `campaign-metadata.v1` | 1 | compacted | `campaignId` | simulator (stand-in for campaign management) |
+| `campaign-metadata.v1` | 1 | compacted | `campaignId` | ad server (direct catalog at start-up, DSP campaigns on first win) |
 | `ad-events-clean.v1` | 12 | 7 days | `sessionId` | Flink, transactional |
+| `ad-decisions.v1` | 12 | 7 days | `requestId` | ad server |
 | `line-item-minutes.v1` | 6 | compacted + 7 days | `lineItemId\|windowStart` | Flink, transactional |
 
 ## Phase 2 design: stream processing
@@ -203,6 +214,65 @@ WHERE __time >= CURRENT_TIMESTAMP - INTERVAL '1' HOUR
 GROUP BY 1 ORDER BY 3 DESC
 ```
 
+## Phase 3 design: ad serving
+
+### Request flow
+
+1. A player starting an ad break sends `POST /v1/ad-requests` (session, device, consent,
+   country, number of slots, break length).
+2. The ad server pseudonymises the device id with the **same keyed hash as the gateway**, so
+   frequency caps, reporting and IVT detection all see the same ids.
+3. It sends **one OpenRTB 2.6 bid request to every DSP in parallel**: one `imp` per slot, with the
+   2.6 pod fields (`podid`, `slotinpod`, `poddur`), the floor, `tmax` (120 ms), the device as
+   `devicetype`, alpha-3 `geo.country` and `ifa` (hashed, and only with consent, otherwise `lmt=1`).
+4. While the DSPs think, it filters direct-sold line items by targeting (country, device type).
+5. One Redis `MGET` drops every candidate whose campaign has hit its hourly frequency cap for this
+   device.
+6. **The pod auction** fills slots in order. Each slot is a unified auction between direct line
+   items and that slot's bids:
+   * bids below the floor are ignored;
+   * **competitive separation:** an advertiser appears at most once per break;
+   * ads must fit the remaining break;
+   * **first price** by default (DSPs shade their bids); **second price** is available
+     (runner-up + 1¢, a sole bidder pays the floor). Direct line items pay their contracted CPM.
+7. Winners: caps are incremented (pipelined `INCR` + `EXPIRE`), win notices (`nurl` with
+   `${AUCTION_PRICE}`) go to winning DSPs, and the full decision (every DSP outcome, every slot's
+   bid and clearing price) goes to `ad-decisions.v1`.
+8. The player plays the pod and reports the `auctionId` and clearing price on its tracking events,
+   so every billed impression can be joined back to the auction that sold it.
+
+### Mock DSPs
+
+Three bidders with deliberately different trade-offs, drawn from log-normal value and latency
+distributions:
+
+| DSP | Bid rate | Median value (CPM) | Median latency | Character |
+|---|---|---|---|---|
+| `premium-dsp` | 55% | $34 | 35 ms | Selective, high value, fast |
+| `budget-dsp` | 90% | $17 | 22 ms | Bids on nearly everything, cheap |
+| `slow-dsp` | 75% | $40 | 85 ms (fat tail) | Values impressions highly, but often misses `tmax` |
+
+They shade bids to 85–90% of value in first-price auctions and bid true value in second-price
+ones, respect floors and slot durations, and count win notices.
+
+### Decisions
+
+* **A slow or broken DSP costs only its own bids.** Every DSP call becomes a result (BID,
+  NO_BID, TIMEOUT, ERROR); the auction waits at most `tmax` and proceeds with whatever arrived.
+* **The auction deadline is not the HTTP timeout.** The auction stops waiting at `tmax`, but the
+  HTTP exchange may run on (up to 1 s) so the connection goes back to the pool. Aborting at `tmax`
+  closed connections, and under load the reconnects cost more CPU than anything else in the
+  server (see below).
+* **Admission control.** At most 256 decisions run at once; beyond that the server answers `503`
+  immediately. An unfilled break is a normal outcome for a player; a hung ad server is not.
+* **Fail open on Redis.** A cap check gets a 20 ms pool wait and a 50 ms socket timeout. If Redis
+  is slow, the ad is served uncapped and the error counted.
+* **Caps count serves, not impressions.** Incrementing at decision time is immediate and cheap;
+  the cost is counting the occasional served-but-unplayed ad.
+* **Interim throttle on direct demand.** Without budgets, ~100 direct line items at up to $60 CPM
+  would win almost every slot. Until Phase 4 adds pacing, each line item enters an auction with
+  probability `DIRECT_PARTICIPATION` (1.5%). This is a stand-in, documented as such.
+
 ## Measured results
 
 ### Phase 1: ingest
@@ -252,6 +322,53 @@ restarted. The job restored from its last checkpoint, and afterwards:
 
 Druid rolled the 956k events up into 228k rows (4.2×).
 
+### Phase 3: ad serving
+
+**Correctness.** Full stack (ad server, 3 DSPs, Redis, gateway, Flink, Druid) on the same 4 vCPU VM,
+2,000 events/s (about 230 auctions/s) for 150 s, every output read back:
+
+| Check | Result |
+|---|---|
+| Clean events vs simulator ground truth | **187,027 = 187,027**, 0 duplicates, 0 missing metadata |
+| Played impressions joined to their auction (campaign won a slot, price = clearing price) | **44,610 / 44,610** |
+| Druid billable spend by source vs the auction join | **identical**: $922.73 direct, $750.67 programmatic |
+| Frequency cap counters in Redis above the highest cap (4) | **0** |
+| Fill rate | 85% |
+| Played / served ads | 81% (viewers abandon breaks part-way) |
+
+**Latency and capacity.** Ad server, DSPs, Redis, Redpanda, gateway and the load generator on the
+same 4 vCPUs (Flink and Druid stopped), 60 s per step:
+
+| Offered load | Auctions/s | p50 / p99 | Fast-DSP timeouts | Fill |
+|---|---|---|---|---|
+| 2,000 events/s | 227 | **91 / 129 ms** | 6% | 95% |
+| 5,000 events/s | 542 | 104 / 318 ms | 20% | 88% |
+| 10,000 events/s | 808 | 149 / 333 ms | 50–57% | 72% |
+
+p50 sits near `tmax` because each auction waits for the slow DSP. Beyond ~250 auctions/s the box
+runs out of CPU: the load generator, three DSP JVMs and the ad server share four cores, so even
+the fast DSPs miss the deadline. It degrades gradually rather than failing.
+
+**What testing found and fixed:**
+
+* **The ad server hung under overload.** It accepted unbounded work; requests outlived the
+  clients' 2 s timeout, and 13,062 abandoned connections sat in `CLOSE_WAIT` until it ran out of
+  file descriptors (20,000/20,000) and stopped answering even `/health`. Fixed with admission
+  control (bounded in-flight decisions, immediate 503) and a fail-fast Redis pool; covered by
+  `AdServerHttpTest.shedsLoadInsteadOfQueueing`.
+* **Connection churn was the biggest CPU cost.** A JFR profile showed 26% of CPU in the JDK HTTP
+  client, mostly its connection pool: every `tmax` timeout closed a connection and the next call
+  reconnected. Letting the exchange finish in the background (and serializing each bid request
+  once instead of per DSP) took the 10k-events/s step from 478 auctions/s at p99 2,143 ms to 808
+  auctions/s at p99 333 ms, and the 2k step from p50 121 ms to 91 ms.
+* **The campaign catalog was silently never published.** With `max.block.ms=0`, every send failed
+  until the producer had fetched topic metadata, so the start-up announcement of all 50 direct
+  campaigns was dropped, and the campaigns were marked announced anyway. 82k events then lacked
+  metadata. Now the producer fetches metadata before serving, a campaign counts as announced only
+  once the write is acknowledged, and the ad server does not start serving until the catalog is in Kafka.
+* **Second-price auctions overcharged sole bidders by 1¢** (floor + 1¢ instead of the floor).
+  Caught by `AuctionTest`.
+
 ## API
 
 `POST /v1/events`
@@ -287,13 +404,19 @@ including Kafka producer and JVM metrics.
 | `DUPLICATE_RATE`, `LATE_RATE`, `INVALID_RATE`, `LATE_DELAY_MS` | simulator | `0.01`, `0.02`, `0.005`, `30000` |
 | `BOT_SESSION_SHARE`, `BOT_DEVICES` | simulator | `0.01`, `5` |
 | `CAMPAIGNS`, `SEED` | simulator | `50`, `42` (event ids derive from the seed) |
-| `KAFKA_BOOTSTRAP` | simulator | unset; when set, publishes the campaign catalog |
+| `AD_SERVER_URL`, `AD_REQUEST_CONCURRENCY` | simulator | unset (local catalog), `256` |
+| `KAFKA_BOOTSTRAP` | simulator | unset; without an ad server, publishes the campaign catalog |
+| `DSP_ENDPOINTS` | ad server | `name=url,...` |
+| `TMAX_MS`, `FLOOR_CPM`, `AUCTION_TYPE` | ad server | `120`, `5.00`, `first` (or `second`) |
+| `DIRECT_PARTICIPATION`, `MAX_IN_FLIGHT`, `DSP_FREQUENCY_CAP_PER_HOUR` | ad server | `0.015`, `256`, `4` |
+| `REDIS_URL`, `DEVICE_ID_SECRET` | ad server | unset = in-process caps; secret must match the gateway's |
+| `DSP_PROFILE`, `PUBLIC_URL` | mock DSP | `premium`, `budget` or `slow`; URL for win notices |
 | `DEDUP_TTL_MINUTES` | stream-processor | `30` |
 | `OUT_OF_ORDERNESS_SECONDS`, `ALLOWED_LATENESS_MINUTES`, `LATE_FIRING_DELAY_SECONDS` | stream-processor | `5`, `10`, `5` |
 | `IVT_MAX_IMPRESSIONS_PER_DEVICE_MINUTE` | stream-processor | `20` |
 | `METADATA_WAIT_SECONDS`, `CHECKPOINT_INTERVAL_SECONDS` | stream-processor | `60`, `10` |
 | `NUXT_PUBLIC_GATEWAY_URL` | dashboard | `http://localhost:8080` (or `?gateway=` in the URL) |
-| `NUXT_FLINK_URL`, `NUXT_DRUID_URL` | dashboard (server) | `http://localhost:8082`, `http://localhost:8888` |
+| `NUXT_FLINK_URL`, `NUXT_DRUID_URL`, `NUXT_AD_SERVER_URL` | dashboard (server) | `http://localhost:8082`, `http://localhost:8888`, `http://localhost:8090` |
 
 ## CI / deployment
 
@@ -308,6 +431,11 @@ including Kafka producer and JVM metrics.
 * `npm audit` reports two high-severity advisories in the dashboard's build tooling (`braces`
   via nitropack's globby, `node-forge` via the dev server's listhen). Neither ships in the
   built dashboard, and no fixed versions exist yet.
+* The ad server has a cold-start transient: in the first ~20 s after start, before the JIT and
+  DSP connection pools warm up, some auctions time out or are shed (1,432 failed requests at the
+  start of the measured run, then none).
+* Direct demand is throttled by a fixed participation probability until pacing replaces it in
+  Phase 4.
 * Druid's supervisor reports a lag of a few records per partition on the clean topic. Those are
   Kafka transaction markers, which a `read_committed` consumer never receives as records.
 * Flink operator metrics (duplicates dropped, IVT flagged) restart from zero when the job

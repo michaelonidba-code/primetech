@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.random.RandomGenerator;
 
 /**
@@ -16,6 +17,9 @@ import java.util.random.RandomGenerator;
  */
 final class TrafficEngine {
     private record Delayed(long sendAtMs, ClientEvent event) {
+    }
+
+    private record Ready(SessionPlanner.Viewer viewer, List<SessionPlanner.PodAd> pod) {
     }
 
     /** Bot traffic settings: share of new sessions run by bots, and how many bot devices exist. */
@@ -31,15 +35,26 @@ final class TrafficEngine {
     private final long lateDelayMs;
     private final Bots bots;
     private final String[] botDeviceIds;
+    private final PodSource pods;
+    // Pods arrive from ad server callbacks on other threads; the engine itself stays single-threaded.
+    private final ConcurrentLinkedQueue<Ready> ready = new ConcurrentLinkedQueue<>();
 
     private final PriorityQueue<Session> active = new PriorityQueue<>(Comparator.comparingLong(Session::nextDueMs));
     private final PriorityQueue<Delayed> delayed = new PriorityQueue<>(Comparator.comparingLong(Delayed::sendAtMs));
     private long lastTickMs = -1;
     private double sessionCarry;
 
+    /** Engine that picks ads from the local catalog. */
     TrafficEngine(SessionPlanner planner, FaultInjector faults, RandomGenerator random, GroundTruth truth,
                   double targetEventsPerSecond, long lateDelayMs, Bots bots) {
+        this(planner, faults, random, truth, targetEventsPerSecond, lateDelayMs, bots, null);
+    }
+
+    /** @param pods where breaks get their ads; null means the local catalog */
+    TrafficEngine(SessionPlanner planner, FaultInjector faults, RandomGenerator random, GroundTruth truth,
+                  double targetEventsPerSecond, long lateDelayMs, Bots bots, PodSource pods) {
         this.planner = planner;
+        this.pods = pods != null ? pods : (viewer, onPod) -> onPod.accept(planner.localPod(viewer, random));
         this.bots = bots;
         this.botDeviceIds = new String[bots.devices()];
         for (int i = 0; i < botDeviceIds.length; i++) {
@@ -55,6 +70,14 @@ final class TrafficEngine {
 
     List<ClientEvent> tick(long nowMs) {
         startSessions(nowMs);
+        Ready r;
+        while ((r = ready.poll()) != null) {
+            if (r.pod().isEmpty()) {
+                truth.noFill.increment();
+            } else {
+                active.add(planner.play(r.viewer(), r.pod(), nowMs, random));
+            }
+        }
         var out = new ArrayList<ClientEvent>();
 
         while (!active.isEmpty() && active.peek().nextDueMs() <= nowMs) {
@@ -98,13 +121,15 @@ final class TrafficEngine {
         int toStart = (int) sessionCarry;
         sessionCarry -= toStart;
         for (int i = 0; i < toStart; i++) {
+            SessionPlanner.Viewer viewer;
             if (bots.sessionShare() > 0 && random.nextDouble() < bots.sessionShare()) {
-                active.add(planner.planBot(nowMs, botDeviceIds[random.nextInt(botDeviceIds.length)], random));
+                viewer = planner.botViewer(botDeviceIds[random.nextInt(botDeviceIds.length)], random);
                 truth.botSessions.increment();
             } else {
-                active.add(planner.plan(nowMs, random));
+                viewer = planner.viewer(random);
             }
             truth.sessions.increment();
+            pods.request(viewer, pod -> ready.add(new Ready(viewer, pod)));
         }
     }
 

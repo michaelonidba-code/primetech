@@ -28,6 +28,7 @@ public final class EventNormalizer {
                 e.deviceType(),
                 e.country(),
                 e.consent(),
-                e.priceMicros());
+                e.priceMicros(),
+                e.auctionId());
     }
 }

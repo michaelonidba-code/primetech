@@ -3,6 +3,7 @@ package dev.primetech.ads.simulator;
 import dev.primetech.ads.common.ClientEvent;
 import dev.primetech.ads.common.EventType;
 import dev.primetech.ads.common.EventValidator;
+import dev.primetech.ads.common.catalog.AdCatalog;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

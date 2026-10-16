@@ -10,7 +10,7 @@ public record DeadLetter(RejectReason reason, long receivedTimeMs, ClientEvent e
     public static DeadLetter of(RejectReason reason, long receivedTimeMs, ClientEvent e) {
         var scrubbed = new ClientEvent(e.eventId(), e.type(), e.eventTimeMs(), e.sessionId(), e.adId(),
                 e.creativeId(), e.campaignId(), e.lineItemId(), null, e.deviceType(), e.country(), e.consent(),
-                e.priceMicros());
+                e.priceMicros(), e.auctionId());
         return new DeadLetter(reason, receivedTimeMs, scrubbed);
     }
 }

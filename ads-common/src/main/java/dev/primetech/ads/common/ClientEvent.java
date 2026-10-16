@@ -17,6 +17,7 @@ package dev.primetech.ads.common;
  * @param country       ISO 3166-1 alpha-2 country code
  * @param consent       whether the viewer allows identifier-based ad tracking
  * @param priceMicros   clearing price in micro-currency units; only set on impressions
+ * @param auctionId     the ad server decision that served this ad, when the ad came from one
  */
 public record ClientEvent(
         String eventId,
@@ -31,5 +32,14 @@ public record ClientEvent(
         DeviceType deviceType,
         String country,
         Boolean consent,
-        Long priceMicros) {
+        Long priceMicros,
+        String auctionId) {
+
+    /** Event without an auction id (ads not served by the ad server). */
+    public ClientEvent(String eventId, EventType type, Long eventTimeMs, String sessionId, String adId,
+                       String creativeId, String campaignId, String lineItemId, String deviceId,
+                       DeviceType deviceType, String country, Boolean consent, Long priceMicros) {
+        this(eventId, type, eventTimeMs, sessionId, adId, creativeId, campaignId, lineItemId, deviceId, deviceType,
+                country, consent, priceMicros, null);
+    }
 }

@@ -15,6 +15,9 @@
     <module>ingest-gateway</module>
     <module>event-simulator</module>
     <module>stream-processor</module>
+    <module>openrtb</module>
+    <module>mock-dsp</module>
+    <module>ad-server</module>
   </modules>
 
   <properties>
@@ -25,6 +28,7 @@
     <jackson.version>2.17.2</jackson.version>
     <micrometer.version>1.13.4</micrometer.version>
     <slf4j.version>2.0.16</slf4j.version>
+    <jedis.version>5.2.0</jedis.version>
     <junit.version>5.11.0</junit.version>
     <assertj.version>3.26.3</assertj.version>
   </properties>
@@ -35,6 +39,16 @@
         <groupId>dev.primetech.ads</groupId>
         <artifactId>ads-common</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.primetech.ads</groupId>
+        <artifactId>openrtb</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>redis.clients</groupId>
+        <artifactId>jedis</artifactId>
+        <version>${jedis.version}</version>
       </dependency>
       <dependency>
         <groupId>com.fasterxml.jackson</groupId>

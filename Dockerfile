@@ -9,6 +9,9 @@ COPY ads-common ads-common
 COPY ingest-gateway ingest-gateway
 COPY event-simulator event-simulator
 COPY stream-processor stream-processor
+COPY openrtb openrtb
+COPY mock-dsp mock-dsp
+COPY ad-server ad-server
 RUN --mount=type=cache,target=/root/.m2 \
     --mount=type=secret,id=truststore,required=false \
     MAVEN_OPTS="$MAVEN_OPTS" mvn -B -q -DskipTests package
@@ -26,6 +29,14 @@ EXPOSE 8080
 
 FROM runtime-base AS simulator
 COPY --from=build /src/event-simulator/target/event-simulator.jar /app/app.jar
+
+FROM runtime-base AS ad-server
+COPY --from=build /src/ad-server/target/ad-server.jar /app/app.jar
+EXPOSE 8090
+
+FROM runtime-base AS mock-dsp
+COPY --from=build /src/mock-dsp/target/mock-dsp.jar /app/app.jar
+EXPOSE 9000
 
 # Flink application image: the job jar in usrlib is picked up by "standalone-job" mode.
 FROM flink:2.2.1-java21 AS stream-processor

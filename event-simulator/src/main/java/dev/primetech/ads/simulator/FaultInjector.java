@@ -53,6 +53,6 @@ final class FaultInjector {
 
     private static ClientEvent copy(ClientEvent e, long time, String country, Long price, String campaignId) {
         return new ClientEvent(e.eventId(), e.type(), time, e.sessionId(), e.adId(), e.creativeId(), campaignId,
-                e.lineItemId(), e.deviceId(), e.deviceType(), country, e.consent(), price);
+                e.lineItemId(), e.deviceId(), e.deviceType(), country, e.consent(), price, e.auctionId());
     }
 }

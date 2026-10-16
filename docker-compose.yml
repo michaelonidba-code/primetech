@@ -58,16 +58,67 @@ services:
     ports:
       - "8080:8080"
 
+  # --- Ad serving: the ad server runs an OpenRTB auction across three mock DSPs ------------------
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-ttl"]
+
+  dsp-premium: &dsp
+    build:
+      context: .
+      target: mock-dsp
+    environment:
+      DSP_PROFILE: premium
+      PUBLIC_URL: http://dsp-premium:9000
+      JAVA_OPTS: -Xmx192m -XX:+UseZGC -XX:+ZGenerational
+
+  dsp-budget:
+    <<: *dsp
+    environment:
+      DSP_PROFILE: budget
+      PUBLIC_URL: http://dsp-budget:9000
+      JAVA_OPTS: -Xmx192m -XX:+UseZGC -XX:+ZGenerational
+
+  dsp-slow:
+    <<: *dsp
+    environment:
+      DSP_PROFILE: slow
+      PUBLIC_URL: http://dsp-slow:9000
+      JAVA_OPTS: -Xmx192m -XX:+UseZGC -XX:+ZGenerational
+
+  ad-server:
+    build:
+      context: .
+      target: ad-server
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      REDIS_URL: redis://redis:6379
+      # Must match the gateway's, so frequency caps and event reporting see the same device ids.
+      DEVICE_ID_SECRET: ${DEVICE_ID_SECRET:-local-dev-secret-change-me}
+      DSP_ENDPOINTS: premium-dsp=http://dsp-premium:9000/openrtb2/bid,budget-dsp=http://dsp-budget:9000/openrtb2/bid,slow-dsp=http://dsp-slow:9000/openrtb2/bid
+      TMAX_MS: ${TMAX_MS:-120}
+      FLOOR_CPM: ${FLOOR_CPM:-5.00}
+      AUCTION_TYPE: ${AUCTION_TYPE:-first}
+      JAVA_OPTS: -Xms512m -Xmx512m -XX:+UseZGC -XX:+ZGenerational
+    ports:
+      - "8090:8090"
+
   simulator:
     build:
       context: .
       target: simulator
     depends_on:
       - gateway
+      - ad-server
     environment:
       GATEWAY_URL: http://gateway:8080
-      # Publishes the campaign catalog to campaign-metadata.v1 on start-up.
-      KAFKA_BOOTSTRAP: redpanda:9092
+      # Every ad break asks the ad server for its ads, like a real player.
+      AD_SERVER_URL: http://ad-server:8090
       TARGET_EPS: ${TARGET_EPS:-2000}
       DURATION_SECONDS: ${DURATION_SECONDS:-0}
       CONCURRENCY: ${CONCURRENCY:-16}
@@ -212,6 +263,7 @@ services:
       # Server-side routes reach these over the Compose network.
       NUXT_FLINK_URL: http://jobmanager:8081
       NUXT_DRUID_URL: http://router:8888
+      NUXT_AD_SERVER_URL: http://ad-server:8090
     ports:
       - "3000:3000"
 

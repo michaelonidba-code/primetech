@@ -3,6 +3,7 @@ package dev.primetech.ads.simulator;
 import dev.primetech.ads.common.ClientEvent;
 import dev.primetech.ads.common.EventType;
 import dev.primetech.ads.common.EventValidator;
+import dev.primetech.ads.common.catalog.AdCatalog;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -62,6 +63,37 @@ class TrafficEngineTest {
         // Each bot device fires far more impressions per minute than any person could.
         long perDevicePerMinute = botEvents.stream().filter(e -> e.type() == EventType.IMPRESSION).count() / 5 / 2;
         assertThat(perDevicePerMinute).isGreaterThan(30);
+    }
+
+    @Test
+    void playsPodsFromAnAsynchronousAdSource() throws Exception {
+        var random = new SplittableRandom(9);
+        var truth = new GroundTruth();
+        var executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        var requests = new java.util.concurrent.atomic.AtomicInteger();
+        // Every third break goes unfilled; the others get one ad with an auction id, answered on another thread.
+        PodSource source = (viewer, onPod) -> executor.execute(() -> onPod.accept(requests.incrementAndGet() % 3 == 0
+                ? List.of()
+                : List.of(new SessionPlanner.PodAd("ad-x", "cr-x", "camp-x", "li-x", 15, 12_345, "auction-" + viewer.sessionId()))));
+        var engine = new TrafficEngine(new SessionPlanner(AdCatalog.generate(5, random)), new FaultInjector(0, 0, 0),
+                random, truth, 500, 30_000, TrafficEngine.Bots.NONE, source);
+
+        var events = new ArrayList<ClientEvent>();
+        for (long t = START; t <= START + 60_000; t += 20) {
+            events.addAll(engine.tick(t));
+            if (t % 1_000 == 0) {
+                Thread.sleep(1); // let callbacks land
+            }
+        }
+        executor.shutdown();
+
+        assertThat(events).isNotEmpty().allSatisfy(e -> {
+            assertThat(e.campaignId()).isEqualTo("camp-x");
+            assertThat(e.auctionId()).isEqualTo("auction-" + e.sessionId());
+        });
+        assertThat(events).filteredOn(e -> e.type() == EventType.IMPRESSION)
+                .allSatisfy(e -> assertThat(e.priceMicros()).isEqualTo(12_345L));
+        assertThat(truth.noFill.sum()).isPositive();
     }
 
     @Test

@@ -11,6 +11,8 @@ public final class Topics {
     public static final String AD_EVENTS_CLEAN = "ad-events-clean.v1";
     /** Per line item per minute delivery totals, an upsert stream keyed by line item and minute. */
     public static final String LINE_ITEM_MINUTES = "line-item-minutes.v1";
+    /** One record per ad request: candidates, bids, winners and clearing prices. Keyed by request id. */
+    public static final String AD_DECISIONS = "ad-decisions.v1";
 
     private Topics() {
     }

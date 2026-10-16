@@ -1,6 +1,7 @@
 package dev.primetech.ads.simulator;
 
 import dev.primetech.ads.common.ClientEvent;
+import dev.primetech.ads.common.catalog.AdCatalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,14 +20,17 @@ public final class SimulatorApp {
 
         var random = new SplittableRandom(config.seed());
         var catalog = AdCatalog.generate(config.campaigns(), random);
-        if (config.kafkaBootstrap() != null && !config.kafkaBootstrap().isBlank()) {
+        boolean useAdServer = config.adServerUrl() != null && !config.adServerUrl().isBlank();
+        // With an ad server, it owns and announces the campaign catalog.
+        if (!useAdServer && config.kafkaBootstrap() != null && !config.kafkaBootstrap().isBlank()) {
             CatalogPublisher.publish(config.kafkaBootstrap(), catalog.campaigns());
         }
+        var adServer = useAdServer ? new AdServerPodSource(config.adServerUrl(), config.adRequestConcurrency()) : null;
         var truth = new GroundTruth();
         var engine = new TrafficEngine(new SessionPlanner(catalog),
                 new FaultInjector(config.duplicateRate(), config.lateRate(), config.invalidRate()),
                 random, truth, config.targetEventsPerSecond(), config.lateDelayMs(),
-                new TrafficEngine.Bots(config.botSessionShare(), config.botDevices()));
+                new TrafficEngine.Bots(config.botSessionShare(), config.botDevices()), adServer);
 
         try (var client = new GatewayClient(config.gatewayUrl(), config.concurrency())) {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> log.info("ground truth: {}", truth.summary())));
@@ -48,6 +52,9 @@ public final class SimulatorApp {
                             (sent - sentAtLastReport) * 1000 / REPORT_EVERY_MS, client.accepted.sum(),
                             client.rejected.sum(), client.retries.sum(), client.failedEvents.sum(),
                             client.inFlight(), engine.activeSessions(), client.drainP99Millis());
+                    if (adServer != null) {
+                        log.info("ad server: {}", adServer.summary());
+                    }
                     sentAtLastReport = sent;
                     nextReport += REPORT_EVERY_MS;
                 }
@@ -66,6 +73,10 @@ public final class SimulatorApp {
             log.info("done: sent={} ({}/s avg) accepted={} rejected={} retries={} failed={}",
                     client.sentEvents.sum(), client.sentEvents.sum() / elapsed, client.accepted.sum(),
                     client.rejected.sum(), client.retries.sum(), client.failedEvents.sum());
+            if (adServer != null) {
+                log.info("ad server: {}", adServer.summary());
+                adServer.close();
+            }
         }
     }
 

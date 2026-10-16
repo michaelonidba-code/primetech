@@ -19,6 +19,8 @@ final class GroundTruth {
     final LongAdder invalid = new LongAdder();
     final LongAdder botSessions = new LongAdder();
     final LongAdder botEvents = new LongAdder();
+    /** Breaks for which no ad was served: nothing to play, so no events. */
+    final LongAdder noFill = new LongAdder();
 
     GroundTruth() {
         for (EventType t : EventType.values()) {
@@ -39,6 +41,7 @@ final class GroundTruth {
                 .append(" invalid=").append(invalid.sum())
                 .append(" botSessions=").append(botSessions.sum())
                 .append(" botEvents=").append(botEvents.sum())
+                .append(" noFill=").append(noFill.sum())
                 .append(" billedMicros=").append(billedMicros.sum())
                 .append(" byType={");
         uniqueValid.forEach((t, n) -> sb.append(t).append('=').append(n.sum()).append(' '));
