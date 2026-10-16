@@ -23,6 +23,10 @@ receivers:
 
 # One cause, one notification: when the cause is already firing, hold back its symptoms.
 inhibit_rules:
+  - source_matchers: [alertname="FlinkJobCrashLooping"]
+    target_matchers: [alertname=~"FlinkJobRestarting|FlinkCheckpointsStalled|DeliveryDataStale|FlinkConsumerLagHigh"]
+  - source_matchers: [alertname="KafkaDiskLow"]
+    target_matchers: [alertname=~"FlinkCheckpointsFailing|FlinkJobCrashLooping|FlinkJobRestarting"]
   - source_matchers: [alertname="FlinkJobNotRunning"]
     target_matchers: [alertname=~"FlinkCheckpointsStalled|FlinkConsumerLagHigh|DeliveryDataStale|FlinkJobRestarting"]
   - source_matchers: [alertname="ServiceDown", job="pacing-service"]

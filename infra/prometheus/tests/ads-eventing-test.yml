@@ -139,3 +139,55 @@ tests:
             exp_annotations:
               summary: "The Flink job restarted 3 times in 10 minutes"
               description: Each restart replays from the last checkpoint (exactly-once holds) but delays output. Check the TaskManager logs.
+
+  - name: a crash loop from a full disk is named, not just a restart warning
+    interval: 1m
+    input_series:
+      # Restarting every minute, so uptime never reaches the 2 minute grace of FlinkCheckpointsStalled.
+      - series: flink_jobmanager_job_numRestarts{job="flink"}
+        values: "0 1 2 3 4 5 6"
+      - series: flink_jobmanager_job_numberOfFailedCheckpoints{job="flink"}
+        values: "0 1 2 3 4 5 6"
+      - series: flink_jobmanager_job_uptime{job="flink"}
+        values: "30000x6"
+      - series: flink_jobmanager_job_lastCheckpointCompletedTimestamp{job="flink"}
+        values: "0x6"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlinkCheckpointsStalled
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: FlinkCheckpointsFailing
+        exp_alerts:
+          - exp_labels: { severity: critical, job: flink }
+            exp_annotations:
+              summary: "5 Flink checkpoints failed in 5 minutes"
+              description: Output is committed on checkpoints, and the job restarts after repeated failures. Usual causes are local disk, the checkpoint store, or a checkpoint timing out under backpressure.
+      - eval_time: 5m
+        alertname: FlinkJobCrashLooping
+        exp_alerts:
+          - exp_labels: { severity: critical, job: flink }
+            exp_annotations:
+              summary: "The Flink job is crash-looping (5 restarts in 10 minutes)"
+              description: Restarts are not recovering it. The JobManager's exception history names the cause; in the Phase 6 load test it was a full disk.
+
+  - name: low Kafka disk by absolute free space, even when Redpanda's own flag is off
+    interval: 1m
+    input_series:
+      - series: redpanda_storage_disk_free_bytes{job="redpanda"}
+        values: "20000000000 20000000000 3000000000 3000000000 3000000000 3000000000"
+      - series: redpanda_storage_disk_total_bytes{job="redpanda"}
+        values: "250000000000x5"
+      - series: redpanda_storage_disk_free_space_alert{job="redpanda"}
+        values: "0x5"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: KafkaDiskLow
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: KafkaDiskLow
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: Kafka (Redpanda) is running out of disk
+              description: On a full disk Redpanda stops, and Flink's local state cannot checkpoint either. Check topic retention (time and size) and add storage.

@@ -6,8 +6,9 @@ reporting with low latency. It is built to run on one machine with Docker Compos
 measured.
 
 This repository is being built in phases. **Phases 1 (event backbone), 2 (stream processing
-and real-time OLAP), 3 (ad serving with OpenRTB auctions), 4 (budget pacing) and 5 (audit and
-observability) are complete.**
+and real-time OLAP), 3 (ad serving with OpenRTB auctions), 4 (budget pacing), 5 (audit and
+observability) and 6 (load testing and write-up) are complete.** Start with the design document,
+[docs/DESIGN.md](docs/DESIGN.md): decisions, correctness, failure behaviour and a capacity model.
 The dashboard installs as an app on desktop and phone and can be hosted behind HTTPS with
 sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 
@@ -32,7 +33,7 @@ sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 | 3. Ad serving | Ad server with direct demand and OpenRTB 2.6 auctions across three mock DSPs, frequency caps, decision log; simulator plays what it serves | ✅ Done |
 | 4. Pacing & budgets | Line item budgets and tiers, pacing service (closed-loop controller fed by Flink), served-spend counters, guaranteed priority | ✅ Done |
 | 5. Audit & observability | Continuous reconciliation service, Prometheus, Grafana, alert rules, Alertmanager, push notifications to the installed app, failure drills | ✅ Done |
-| 6. Load testing & write-up | Benchmarks at scale, design docs | Next |
+| 6. Load testing & write-up | Load test harness and results, profiling, capacity model, design document | ✅ Done |
 
 ## Quick start
 
@@ -88,6 +89,7 @@ cd dashboard && npm ci && npm run dev
 | `mock-dsp/` | Configurable OpenRTB bidder: bid rate, value and latency distributions, bid shading |
 | `pacing-service/` | Budget pacing: a controller per line item, fed by Flink's delivered spend, steering the ad server through Redis |
 | `audit-service/` | Continuous reconciliation of independent records of the same money (Flink vs Druid, Redis vs the decision log, budgets, delivery) |
+| `loadtest/` | Load test harness (steps the simulator, reads Prometheus) and report generator |
 | `infra/prometheus`, `infra/alertmanager`, `infra/grafana` | Scrape config, alert rules and their unit tests, routing and inhibition, provisioned dashboard |
 | `dashboard/` | Nuxt 4 app: gateway throughput, Flink health and Druid campaign delivery |
 | `infra/` | Topic creation script; Druid configuration and ingestion spec |
@@ -379,7 +381,7 @@ impression joined to its auction) gave 15 s.
 Two questions, answered separately:
 
 * **Is it running?** Metrics and alerts. Prometheus scrapes every service, Flink (its Prometheus
-  reporter) and Redpanda. 18 alert rules cover availability, ingest, ad serving, stream
+  reporter) and Redpanda. 20 alert rules cover availability, ingest, ad serving, stream
   processing, pacing, Kafka and the audit itself.
 * **Is the money right?** The audit service. A system can be up, fast and wrong. The audit
   compares independent records of the same fact, continuously, and pages when they disagree.
@@ -658,6 +660,28 @@ the stack started.
 * **The audit's Druid query used `minute` as a column alias.** That is a reserved word, and Druid
   returned 400.
 
+### Phase 6: load tests
+
+The whole stack on the same 4-vCPU machine, load generator included
+([all numbers and how to reproduce them](docs/loadtest/RESULTS.md)):
+
+| | Result |
+|---|---|
+| Event path, sustained | **20,000 events/s** (1.7 billion a day), audit exact |
+| Above capacity (25–30k offered) | Flink is the bottleneck at about 20,500/s; the gateway keeps accepting, Kafka holds the backlog, nothing is lost |
+| Full system, every ad break auctioned | **660 auctions/s**, decision p99 459 ms, nothing shed |
+| Freshness | processed about 0.1 s after receipt; readable downstream 6–8 s later (p50), set by exactly-once commits on 10 s checkpoints |
+
+**What it found:**
+* **A full disk took the system down unannounced.** At 40,000 events/s, time-only retention
+  filled the disk. Redpanda crashed, Flink restarted in a loop, and no alert named the cause.
+  Topics are now capped by size as well as time, and three alerts were added or extended:
+  `KafkaDiskLow` (on free bytes), `FlinkCheckpointsFailing` and `FlinkJobCrashLooping`.
+* **A Flight Recorder profile showed 14% of Flink's CPU spent compressing small Kafka batches.**
+  Larger batches cost no visible latency under exactly-once and gave +7% throughput.
+* **Serialization between Flink's four keyed shuffles is the next lever,** at a quarter of its
+  CPU.
+
 ## API
 
 `POST /v1/events`
@@ -703,6 +727,8 @@ including Kafka producer and JVM metrics.
 | `ALERT_WEBHOOK_TOKEN` | Alertmanager, dashboard | a fixed local value; required in production |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | dashboard | empty: push notifications off |
 | `AUDIT_INTERVAL_SECONDS` | audit service | `60` |
+| `TOPIC_PARTITION_RETENTION_BYTES` | topic setup | `268435456` (256 MiB per partition, alongside 7-day time retention) |
+| `SIM_AD_SERVER_URL` | simulator | `http://ad-server:8090`; empty plans ad breaks locally (event-path load tests) |
 | `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_ANONYMOUS` | Grafana | `admin`, `true` locally; password required and anonymous off in production |
 | `PACING_PERIOD_MINUTES`, `BUDGET_SCALE` | ad server, pacing service | `30`, `1.0` (budgets sized for 30 min at ~2,000 events/s) |
 | `PACING_TICK_SECONDS` | pacing service | `10` |
@@ -719,7 +745,7 @@ including Kafka producer and JVM metrics.
 
 * `.github/workflows/ci.yml` runs the Maven build and tests, the dashboard typecheck and static
   build, and builds every Docker image.
-* CI also runs `promtool check config`, the alert-rule unit tests (`promtool test rules`, 8 cases)
+* CI also runs `promtool check config`, the alert-rule unit tests (`promtool test rules`, 10 cases)
   and `amtool check-config`.
 * `.github/workflows/nuxtjs.yml` publishes a static build of the dashboard to GitHub Pages (enable
   Pages with source "GitHub Actions"). It has no server, so it talks to whichever gateway you

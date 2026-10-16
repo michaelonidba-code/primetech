@@ -82,6 +82,12 @@ public final class PipelineJob {
         // Must not exceed the broker's maximum (Redpanda: transaction_max_timeout_ms, 15 min by default).
         props.setProperty("transaction.timeout.ms", "600000");
         props.setProperty("compression.type", "lz4");
+        // Bigger, fuller batches. Records only become visible when the transaction commits at the
+        // next checkpoint, so waiting up to 50 ms to fill a batch adds no visible latency. With the
+        // defaults (5 ms, 16 KB) a load-test profile spent 14% of the TaskManager's CPU in LZ4,
+        // much of it writing the headers of small batches.
+        props.setProperty("linger.ms", "50");
+        props.setProperty("batch.size", "262144");
         return KafkaSink.<T>builder()
                 .setBootstrapServers(config.kafkaBootstrap())
                 .setRecordSerializer(schema)
