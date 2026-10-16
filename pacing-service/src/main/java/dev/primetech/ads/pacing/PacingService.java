@@ -5,6 +5,7 @@ import dev.primetech.ads.common.catalog.LineItemConfig;
 import dev.primetech.ads.common.pacing.PacingPeriod;
 import dev.primetech.ads.common.pacing.PacingState;
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,13 +44,35 @@ public final class PacingService {
     private final AtomicLong horizonMs = new AtomicLong(Long.MIN_VALUE);
     private final Counter storeErrors;
     private volatile List<PacingState> latest = List.of();
+    /** When pacing state last reached the store; the ad server falls back if this gets old. */
+    private final AtomicLong lastPublishMs;
+    /** Overspend threshold for the overspent-line-items gauge: 1% over budget. */
+    static final double OVERSPEND_TOLERANCE = 1.01;
 
     public PacingService(PacingPeriod period, PacingStore store, LongSupplier clock, MeterRegistry registry) {
         this.period = period;
         this.store = store;
         this.clock = clock;
         this.storeErrors = registry.counter("pacing.store.errors");
+        this.lastPublishMs = new AtomicLong(clock.getAsLong());
         registry.gauge("pacing.line.items", pacers, Map::size);
+        Gauge.builder("pacing.publish.age.seconds", () -> (clock.getAsLong() - lastPublishMs.get()) / 1000.0)
+                .description("Seconds since pacing state was last written to Redis").register(registry);
+        Gauge.builder("pacing.delivery.lag.seconds", () -> horizonMs.get() == Long.MIN_VALUE
+                        ? Double.NaN : (clock.getAsLong() - horizonMs.get()) / 1000.0)
+                .description("How far behind real time delivered spend from the stream processor is").register(registry);
+        Gauge.builder("pacing.period.elapsed.ratio", () -> period.elapsed(clock.getAsLong())).register(registry);
+        for (PacingState.Status status : PacingState.Status.values()) {
+            Gauge.builder("pacing.line.items.by.status", () -> latest.stream().filter(s -> s.status() == status).count())
+                    .tag("status", status.name()).register(registry);
+        }
+        Gauge.builder("pacing.delivered.budget.ratio.max", () -> latest.stream()
+                        .filter(s -> s.budgetMicros() > 0)
+                        .mapToDouble(s -> (double) s.deliveredMicros() / s.budgetMicros()).max().orElse(0))
+                .description("Highest delivered / budget among line items this period").register(registry);
+        Gauge.builder("pacing.overspent.line.items", () -> latest.stream()
+                        .filter(s -> s.deliveredMicros() > s.budgetMicros() * OVERSPEND_TOLERANCE).count())
+                .description("Line items more than 1% over budget this period").register(registry);
     }
 
     public void lineItem(LineItemConfig config) {
@@ -98,6 +121,7 @@ public final class PacingService {
         states.sort(Comparator.comparing(PacingState::lineItemId));
         try {
             store.publish(states);
+            lastPublishMs.set(now);
         } catch (Exception e) {
             storeErrors.increment();
             log.warn("cannot publish pacing state: {}", e.toString());

@@ -1,0 +1,141 @@
+# promtool test rules infra/prometheus/tests/ads-eventing-test.yml (run in CI)
+rule_files:
+  - ../rules/ads-eventing.yml
+evaluation_interval: 15s
+
+tests:
+  - name: pacing state stops updating
+    interval: 15s
+    input_series:
+      # Healthy for 2 minutes (age stays under 10 s), then Redis goes away and the age grows.
+      - series: pacing_publish_age_seconds{job="pacing-service"}
+        values: "5 5 5 5 5 5 5 5 20 35 50 65 80 95 110"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: PacingStateStale
+        exp_alerts: []
+      - eval_time: 3m30s
+        alertname: PacingStateStale
+        exp_alerts:
+          - exp_labels: { severity: critical, job: pacing-service }
+            exp_annotations:
+              summary: "Pacing state not updated for 1m 50s"
+              description: The ad server has fallen back to a fixed throttle and budget-only stop. It cannot overspend, but it under-delivers. Check Redis and the pacing service.
+
+  - name: an audit mismatch pages at once, and a healthy check does not
+    interval: 1m
+    input_series:
+      - series: audit_check_ok{check="served-vs-decision-log"}
+        values: "1 1 0 0"
+      - series: audit_check_ok{check="flink-vs-druid"}
+        values: "1 1 1 1"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: AuditMismatch
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: AuditMismatch
+        exp_alerts:
+          - exp_labels: { severity: critical, check: served-vs-decision-log }
+            exp_annotations:
+              summary: "Audit check served-vs-decision-log found a mismatch"
+              description: Two independent records of the same money disagree. The audit panel and audit-results.v1 list the line items.
+
+  - name: a pending audit (NaN) is not a mismatch
+    interval: 1m
+    input_series:
+      - series: audit_check_ok{check="budget-compliance"}
+        values: "NaN NaN NaN"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: AuditMismatch
+        exp_alerts: []
+
+  - name: checkpoints stall
+    interval: 30s
+    input_series:
+      # The last completed checkpoint stays at t=0 (ms); time() moves on.
+      - series: flink_jobmanager_job_lastCheckpointCompletedTimestamp{job="flink"}
+        values: "0x20"
+      # The job has been running for a long time (ms).
+      - series: flink_jobmanager_job_uptime{job="flink"}
+        values: "600000+30000x20"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FlinkCheckpointsStalled
+        exp_alerts: []
+      - eval_time: 3m30s
+        alertname: FlinkCheckpointsStalled
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "No completed checkpoint for 3m 30s"
+              description: Transactional output is committed on checkpoints, so downstream consumers see nothing new until one completes.
+
+  - name: the stream job disappearing entirely still alerts
+    interval: 15s
+    input_series:
+      - series: up{job="gateway"}
+        values: "1x10"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FlinkJobNotRunning
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: The stream processing job is not running
+              description: No clean events, no minute totals, so pacing works from stale delivery and reporting stops.
+
+  - name: rejection rate threshold
+    interval: 1m
+    input_series:
+      # 1,000 events/min accepted; rejections at 2% then 10%.
+      - series: ads_ingest_events_accepted_total
+        values: "0+1000x20"
+      - series: ads_ingest_events_rejected_total
+        values: "0+20x10 200+100x10"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: IngestRejectionRateHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: IngestRejectionRateHigh
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "9.091% of incoming events are rejected"
+              description: Usually a client release sending malformed events. The dead-letter topic ad-events-dlq.v1 has the details.
+
+  - name: a job that just restarted gets time to restore before checkpoints count as stalled
+    interval: 30s
+    input_series:
+      - series: flink_jobmanager_job_lastCheckpointCompletedTimestamp{job="flink"}
+        values: "0x20"
+      # Restarted at t=0: uptime grows from zero and passes 2 minutes at 2m.
+      - series: flink_jobmanager_job_uptime{job="flink"}
+        values: "0+30000x20"
+    alert_rule_test:
+      - eval_time: 2m30s
+        alertname: FlinkCheckpointsStalled
+        exp_alerts: []
+      - eval_time: 3m30s
+        alertname: FlinkCheckpointsStalled
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "No completed checkpoint for 3m 30s"
+              description: Transactional output is committed on checkpoints, so downstream consumers see nothing new until one completes.
+
+  - name: restart counts are whole numbers
+    interval: 1m
+    input_series:
+      - series: flink_jobmanager_job_numRestarts{job="flink"}
+        values: "0 0 1 2 3 3 3"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FlinkJobRestarting
+        exp_alerts:
+          - exp_labels: { severity: warning, job: flink }
+            exp_annotations:
+              summary: "The Flink job restarted 3 times in 10 minutes"
+              description: Each restart replays from the last checkpoint (exactly-once holds) but delays output. Check the TaskManager logs.

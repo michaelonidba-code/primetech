@@ -17,5 +17,11 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
     </dependency>
+    <!-- Only for pacing.ServedSpend. Optional, so it does not end up in the Flink job's jar. -->
+    <dependency>
+      <groupId>redis.clients</groupId>
+      <artifactId>jedis</artifactId>
+      <optional>true</optional>
+    </dependency>
   </dependencies>
 </project>

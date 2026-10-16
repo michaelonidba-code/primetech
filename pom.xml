@@ -19,6 +19,7 @@
     <module>mock-dsp</module>
     <module>ad-server</module>
     <module>pacing-service</module>
+    <module>audit-service</module>
   </modules>
 
   <properties>

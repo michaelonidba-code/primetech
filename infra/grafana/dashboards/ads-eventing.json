@@ -1,0 +1,1730 @@
+{
+ "uid": "ads-eventing-ops",
+ "title": "Ads Eventing: operations",
+ "tags": [
+  "ads-eventing"
+ ],
+ "timezone": "utc",
+ "refresh": "30s",
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "schemaVersion": 41,
+ "version": 1,
+ "editable": false,
+ "panels": [
+  {
+   "type": "row",
+   "title": "Health",
+   "id": 1,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "stat",
+   "title": "Events accepted/s",
+   "description": "",
+   "id": 2,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(ads_ingest_events_accepted_total[1m]))",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Auctions/s",
+   "description": "",
+   "id": 3,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 4,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(adserver_requests_total[1m]))",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Fill rate",
+   "description": "",
+   "id": 4,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.7
+       },
+       {
+        "color": "green",
+        "value": 0.85
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(adserver_slots_filled_total[5m])) / sum(rate(adserver_slots_requested_total[5m]))",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Flink jobs running",
+   "description": "",
+   "id": 5,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(flink_jobmanager_numRunningJobs)",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Line items over budget",
+   "description": "",
+   "id": 6,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(pacing_overspent_line_items)",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Firing alerts",
+   "description": "",
+   "id": 7,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 1,
+    "w": 4,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count(ALERTS{alertstate=\"firing\"}) or vector(0)",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Ingest",
+   "id": 8,
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "timeseries",
+   "title": "Events per second",
+   "description": "",
+   "id": 9,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 6,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(ads_ingest_events_accepted_total[1m]))",
+     "legendFormat": "accepted"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(ads_ingest_events_rejected_total[1m]))",
+     "legendFormat": "rejected (to DLQ)"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Gateway latency (batch, incl. Kafka ack)",
+   "description": "",
+   "id": 10,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 6,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(ads_ingest_request_latency_seconds_bucket[5m])))",
+     "legendFormat": "p50"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(ads_ingest_request_latency_seconds_bucket[5m])))",
+     "legendFormat": "p99"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Publish failures (503s)",
+   "description": "",
+   "id": 11,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 6,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(increase(ads_ingest_publish_failures_total[5m]))",
+     "legendFormat": "batches in 5 min"
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Ad serving",
+   "id": 12,
+   "gridPos": {
+    "x": 0,
+    "y": 13,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "timeseries",
+   "title": "Decision latency",
+   "description": "",
+   "id": 13,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 14,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.5, sum by (le) (rate(adserver_decision_latency_seconds_bucket[5m])))",
+     "legendFormat": "p50"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.99, sum by (le) (rate(adserver_decision_latency_seconds_bucket[5m])))",
+     "legendFormat": "p99"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Wins per second by source",
+   "description": "",
+   "id": 14,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 14,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 60,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (source) (rate(adserver_wins_total[1m]))",
+     "legendFormat": "{{source}}"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "DSP timeout rate",
+   "description": "",
+   "id": 15,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 14,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0,
+     "max": 1
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (dsp) (rate(adserver_dsp_timeouts_total[5m])) / sum by (dsp) (rate(adserver_dsp_requests_total[5m]))",
+     "legendFormat": "{{dsp}}"
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Stream processing",
+   "id": 16,
+   "gridPos": {
+    "x": 0,
+    "y": 21,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "timeseries",
+   "title": "Records in per second (ad events source)",
+   "description": "",
+   "id": 17,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 22,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(flink_taskmanager_job_task_operator_numRecordsInPerSecond{operator_name=~\".*ad_events.*\"})",
+     "legendFormat": "records/s"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Pending records (consumer lag)",
+   "description": "",
+   "id": 18,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 22,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(flink_taskmanager_job_task_operator_pendingRecords{operator_name=~\".*ad_events.*\"})",
+     "legendFormat": "pending"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Seconds since last checkpoint",
+   "description": "",
+   "id": 19,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 22,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "time() - max(flink_jobmanager_job_lastCheckpointCompletedTimestamp > 0) / 1000",
+     "legendFormat": "age"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Duplicates dropped and invalid traffic flagged per second",
+   "description": "",
+   "id": 20,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 29,
+    "w": 12,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(flink_taskmanager_job_task_operator_duplicatesDropped[1m]))",
+     "legendFormat": "duplicates"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(rate(flink_taskmanager_job_task_operator_ivtFlagged[1m]))",
+     "legendFormat": "IVT flagged"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Job restarts and failed checkpoints",
+   "description": "",
+   "id": 21,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 29,
+    "w": 12,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(flink_jobmanager_job_numRestarts)",
+     "legendFormat": "restarts"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(flink_jobmanager_job_numberOfFailedCheckpoints)",
+     "legendFormat": "failed checkpoints"
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Pacing",
+   "id": 22,
+   "gridPos": {
+    "x": 0,
+    "y": 36,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "timeseries",
+   "title": "Line items by status",
+   "description": "",
+   "id": 23,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 37,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 60,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "normal"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (status) (pacing_line_items_by_status)",
+     "legendFormat": "{{status}}"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Pacing freshness",
+   "description": "",
+   "id": 24,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 8,
+    "y": 37,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(pacing_publish_age_seconds)",
+     "legendFormat": "state age (ad server falls back > 60 s)"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(pacing_delivery_lag_seconds)",
+     "legendFormat": "delivery data lag"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Highest delivered / budget this period",
+   "description": "",
+   "id": 25,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 16,
+    "y": 37,
+    "w": 8,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(pacing_delivered_budget_ratio_max)",
+     "legendFormat": "highest line item"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(pacing_period_elapsed_ratio)",
+     "legendFormat": "period elapsed"
+    }
+   ]
+  },
+  {
+   "type": "row",
+   "title": "Audit",
+   "id": 26,
+   "gridPos": {
+    "x": 0,
+    "y": 44,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false
+  },
+  {
+   "type": "stat",
+   "title": "Flink vs Druid (per minute)",
+   "description": "Latest completed run of the reconciliation; details in the dashboard app's audit panel and audit-results.v1",
+   "id": 27,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 45,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "OK",
+         "color": "green"
+        },
+        "0": {
+         "text": "MISMATCH",
+         "color": "red"
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "nan",
+        "result": {
+         "text": "PENDING",
+         "color": "text"
+        }
+       }
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(audit_check_ok{check=\"flink-vs-druid\"})",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Redis vs decision log",
+   "description": "Latest completed run of the reconciliation; details in the dashboard app's audit panel and audit-results.v1",
+   "id": 28,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 6,
+    "y": 45,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "OK",
+         "color": "green"
+        },
+        "0": {
+         "text": "MISMATCH",
+         "color": "red"
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "nan",
+        "result": {
+         "text": "PENDING",
+         "color": "text"
+        }
+       }
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(audit_check_ok{check=\"served-vs-decision-log\"})",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Budget compliance",
+   "description": "Latest completed run of the reconciliation; details in the dashboard app's audit panel and audit-results.v1",
+   "id": 29,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 45,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "OK",
+         "color": "green"
+        },
+        "0": {
+         "text": "MISMATCH",
+         "color": "red"
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "nan",
+        "result": {
+         "text": "PENDING",
+         "color": "text"
+        }
+       }
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(audit_check_ok{check=\"budget-compliance\"})",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "stat",
+   "title": "Delivered vs served",
+   "description": "Latest completed run of the reconciliation; details in the dashboard app's audit panel and audit-results.v1",
+   "id": 30,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 18,
+    "y": 45,
+    "w": 6,
+    "h": 4
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "mappings": [
+      {
+       "type": "value",
+       "options": {
+        "1": {
+         "text": "OK",
+         "color": "green"
+        },
+        "0": {
+         "text": "MISMATCH",
+         "color": "red"
+        }
+       }
+      },
+      {
+       "type": "special",
+       "options": {
+        "match": "nan",
+        "result": {
+         "text": "PENDING",
+         "color": "text"
+        }
+       }
+      }
+     ],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       }
+      ]
+     },
+     "color": {
+      "mode": "thresholds"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "colorMode": "value",
+    "graphMode": "area",
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max(audit_check_ok{check=\"delivered-vs-served\"})",
+     "legendFormat": ""
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Items compared per audit run",
+   "description": "",
+   "id": 31,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 49,
+    "w": 12,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (check) (audit_check_compared)",
+     "legendFormat": "{{check}}"
+    }
+   ]
+  },
+  {
+   "type": "timeseries",
+   "title": "Mismatches per audit run",
+   "description": "",
+   "id": 32,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 49,
+    "w": 12,
+    "h": 7
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "showPoints": "never",
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom"
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "max by (check) (audit_check_mismatches)",
+     "legendFormat": "{{check}}"
+    }
+   ]
+  },
+  {
+   "type": "table",
+   "title": "Firing alerts",
+   "id": 33,
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 56,
+    "w": 24,
+    "h": 8
+   },
+   "description": "Alerts Prometheus is firing now. Alertmanager groups them, holds back symptoms of a firing cause, and notifies the dashboard app, which pushes them to subscribed devices.",
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "ALERTS{alertstate=\"firing\"}",
+     "format": "table",
+     "instant": true
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Value": true,
+       "__name__": true,
+       "alertstate": true,
+       "instance": true
+      },
+      "indexByName": {
+       "severity": 0,
+       "alertname": 1,
+       "check": 2,
+       "job": 3
+      },
+      "renameByName": {}
+     }
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "No alerts firing"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "severity"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "critical": {
+            "color": "red",
+            "text": "critical"
+           },
+           "warning": {
+            "color": "orange",
+            "text": "warning"
+           }
+          }
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm"
+   }
+  }
+ ]
+}

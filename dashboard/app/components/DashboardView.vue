@@ -17,6 +17,8 @@ const rejectionRows = computed(() =>
       <code v-if="direct" class="muted">{{ gatewayUrl }}</code>
     </div>
 
+    <AlertsPanel />
+
     <section v-if="status === 'down' && !latest && online" class="card notice">
       <h2>Can't reach the gateway</h2>
       <p v-if="direct">
@@ -55,6 +57,8 @@ const rejectionRows = computed(() =>
     <AdServingPanel />
 
     <PacingPanel />
+
+    <AuditPanel />
 
     <PipelinePanel />
 

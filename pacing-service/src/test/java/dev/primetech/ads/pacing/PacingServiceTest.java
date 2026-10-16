@@ -41,7 +41,12 @@ class PacingServiceTest {
 
     private final FakeStore store = new FakeStore();
     private final AtomicLong now = new AtomicLong(T0 + 10 * 60_000);
-    private final PacingService service = new PacingService(PERIOD, store, now::get, new SimpleMeterRegistry());
+    private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    private final PacingService service = new PacingService(PERIOD, store, now::get, registry);
+
+    private double gauge(String name, String... tags) {
+        return registry.get(name).tags(tags).gauge().value();
+    }
 
     private static LineItemConfig config(String id, long budget) {
         return new LineItemConfig(id, "camp", "adv", LineItemConfig.Tier.STANDARD, 30_000_000, budget);
@@ -89,5 +94,27 @@ class PacingServiceTest {
         store.failing = true;
 
         assertThat(service.tick()).isEqualTo(first);
+    }
+
+    @Test
+    void exposesHealthAndOverspendAsMetrics() {
+        service.lineItem(config("li-ok", 90_000_000));
+        service.lineItem(config("li-over", 10_000_000));
+        // Five minutes delivered by the horizon: li-over is at 120% of its budget.
+        service.minute(minute("li-ok", T0, 1, 10_000_000));
+        service.minute(minute("li-over", T0 + 4 * 60_000, 1, 12_000_000));
+        service.tick();
+
+        assertThat(gauge("pacing.overspent.line.items")).isEqualTo(1);
+        assertThat(gauge("pacing.delivered.budget.ratio.max")).isEqualTo(1.2);
+        assertThat(gauge("pacing.line.items.by.status", "status", "EXHAUSTED")).isEqualTo(1);
+        assertThat(gauge("pacing.delivery.lag.seconds")).isEqualTo(5 * 60);
+        assertThat(gauge("pacing.publish.age.seconds")).isZero();
+
+        // Redis down for two minutes: state stops reaching the ad server, and the gauge shows it.
+        store.failing = true;
+        now.addAndGet(120_000);
+        service.tick();
+        assertThat(gauge("pacing.publish.age.seconds")).isEqualTo(120);
     }
 }

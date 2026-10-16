@@ -1,0 +1,153 @@
+# Alerting rules. Each alert names what is wrong, what it costs, and where to look first.
+# severity: critical = money or data is at risk now (page); warning = degraded, act soon.
+groups:
+  - name: availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"gateway|ad-server|pacing-service|audit-service|flink|redpanda"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for 1 minute."
+
+  - name: ingest
+    rules:
+      - alert: IngestPublishFailures
+        expr: increase(ads_ingest_publish_failures_total[5m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: Gateway cannot write events to Kafka
+          description: "{{ $value | humanize }} batches were refused with 503 in 5 minutes. Players retry, but events may be delayed. Check Redpanda."
+      - alert: IngestRejectionRateHigh
+        expr: |
+          sum(rate(ads_ingest_events_rejected_total[5m]))
+            / (sum(rate(ads_ingest_events_accepted_total[5m])) + sum(rate(ads_ingest_events_rejected_total[5m]))) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of incoming events are rejected"
+          description: Usually a client release sending malformed events. The dead-letter topic ad-events-dlq.v1 has the details.
+
+  - name: ad-serving
+    rules:
+      - alert: AdDecisionLatencyHigh
+        expr: histogram_quantile(0.99, sum by (le) (rate(adserver_decision_latency_seconds_bucket[5m]))) > 0.3
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Ad decision p99 is {{ $value | humanizeDuration }}"
+          description: Players time out waiting for ads above ~500 ms and show the break empty.
+      - alert: AdServerShedding
+        expr: sum(rate(adserver_requests_shed_total[5m])) / sum(rate(adserver_requests_total[5m])) > 0.02
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Ad server rejects {{ $value | humanizePercentage }} of requests"
+          description: Admission control is shedding load (503). Add capacity or find what made decisions slower.
+      - alert: FillRateLow
+        expr: sum(rate(adserver_slots_filled_total[10m])) / sum(rate(adserver_slots_requested_total[10m])) < 0.7
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Fill rate {{ $value | humanizePercentage }}"
+          description: Breaks go unfilled. Check DSP timeouts and errors, and direct line items' pacing.
+
+  - name: stream-processing
+    rules:
+      - alert: FlinkJobNotRunning
+        expr: max(flink_jobmanager_numRunningJobs) < 1 or absent(flink_jobmanager_numRunningJobs)
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: The stream processing job is not running
+          description: No clean events, no minute totals, so pacing works from stale delivery and reporting stops.
+      - alert: FlinkJobRestarting
+        expr: increase(flink_jobmanager_job_numRestarts[10m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "The Flink job restarted {{ $value | printf \"%.0f\" }} times in 10 minutes"
+          description: Each restart replays from the last checkpoint (exactly-once holds) but delays output. Check the TaskManager logs.
+      - alert: FlinkCheckpointsStalled
+        # Only for a job that has been running 2 minutes: one that just restarted is still restoring
+        # (the outage itself is ServiceDown or FlinkJobRestarting). Without this, drill 3 sent a
+        # stale-checkpoint page during recovery, after the cause had already resolved.
+        expr: |
+          time() - max(flink_jobmanager_job_lastCheckpointCompletedTimestamp) / 1000 > 120
+            and on () max(flink_jobmanager_job_uptime) > 120000
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "No completed checkpoint for {{ $value | humanizeDuration }}"
+          description: Transactional output is committed on checkpoints, so downstream consumers see nothing new until one completes.
+      - alert: FlinkConsumerLagHigh
+        expr: sum(flink_taskmanager_job_task_operator_pendingRecords{operator_name=~".*ad_events.*"}) > 200000
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value | humanize }} events waiting for the stream processor"
+          description: The job is falling behind its input; delivery data for pacing is getting older.
+
+  - name: pacing
+    rules:
+      - alert: PacingStateStale
+        expr: pacing_publish_age_seconds > 60
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: "Pacing state not updated for {{ $value | humanizeDuration }}"
+          description: The ad server has fallen back to a fixed throttle and budget-only stop. It cannot overspend, but it under-delivers. Check Redis and the pacing service.
+      - alert: DeliveryDataStale
+        expr: pacing_delivery_lag_seconds > 300
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Delivered spend is {{ $value | humanizeDuration }} behind"
+          description: Pacing steers on served spend alone while Flink output is late. Check the Flink job.
+      - alert: LineItemOverBudget
+        expr: pacing_overspent_line_items > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value }} line item(s) more than 1% over budget"
+          description: Overspend is billed to nobody. Check the pacing panel; the audit's budget-compliance check confirms against Druid.
+      - alert: AdServerOnPacingFallback
+        expr: sum(rate(adserver_pacing_fallback_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: The ad server is pacing on its fallback
+          description: Some line items have no fresh pacing state. Check that the pacing service is running and writing to Redis.
+
+  - name: audit
+    rules:
+      - alert: AuditMismatch
+        expr: audit_check_ok == 0
+        labels: { severity: critical }
+        annotations:
+          summary: "Audit check {{ $labels.check }} found a mismatch"
+          description: Two independent records of the same money disagree. The audit panel and audit-results.v1 list the line items.
+      - alert: AuditNotCompleting
+        expr: time() - audit_check_last_completed_seconds > 1200
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Audit check {{ $labels.check }} has not completed for {{ $value | humanizeDuration }}"
+          description: A source it reads (Druid, Redis, Kafka) is unavailable, so nothing is being verified.
+
+  - name: kafka
+    rules:
+      - alert: KafkaPartitionsUnavailable
+        expr: max(redpanda_cluster_unavailable_partitions) > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $value }} Kafka partitions unavailable"
+          description: Writes to those partitions fail; the gateway answers 503.
+      - alert: KafkaDiskLow
+        expr: max(redpanda_storage_disk_free_space_alert) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: Redpanda is running out of disk
+          description: Redpanda refuses writes when disk is exhausted. Lower retention or add storage.

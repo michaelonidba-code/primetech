@@ -28,6 +28,20 @@ services:
       NUXT_AUTH_USERS: ${DASHBOARD_USERS:?set DASHBOARD_USERS in deploy/.env}
       NUXT_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?set DASHBOARD_SESSION_SECRET in deploy/.env}
       NUXT_TRUST_PROXY: "true"
+      NUXT_ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:?set ALERT_WEBHOOK_TOKEN in deploy/.env}
+      NUXT_VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@${DASHBOARD_DOMAIN}}
+    ports: !reset []
+
+  alertmanager:
+    environment:
+      ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:?set ALERT_WEBHOOK_TOKEN in deploy/.env}
+    ports: !reset []
+
+  grafana:
+    environment:
+      # No anonymous access in production; reach Grafana through an SSH tunnel (see README).
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in deploy/.env}
     ports: !reset []
 
   # Internal only in production.
@@ -44,6 +58,10 @@ services:
   ad-server:
     ports: !reset []
   pacing-service:
+    ports: !reset []
+  audit-service:
+    ports: !reset []
+  prometheus:
     ports: !reset []
 
 volumes:
