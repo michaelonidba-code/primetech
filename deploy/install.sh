@@ -53,10 +53,12 @@ fi
 # Let's Encrypt rate limits, so check first.
 if [[ "${SKIP_DNS_CHECK:-0}" != 1 && "$DOMAIN" != localhost ]]; then
   say "Checking that $DOMAIN points at this server"
-  public_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
-  resolved=$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ')
+  public_ip=$(curl -fs4 --max-time 10 https://api.ipify.org || curl -fs4 --max-time 10 https://ifconfig.me || true)
+  resolved=$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u | tr '\n' ' ' || true)
+  resolved=${resolved% }
   [[ -n "$resolved" ]] || die "$DOMAIN does not resolve yet. Add a DNS A record for it pointing at ${public_ip:-the IP address of this server}, wait a few minutes, and re-run."
-  if [[ -n "$public_ip" && " $resolved " != *" $public_ip "* ]]; then
+  [[ -n "$public_ip" ]] || die "could not find this server's public IP to compare with $DOMAIN ($resolved). If you are sure the A record points here, re-run with SKIP_DNS_CHECK=1."
+  if [[ " $resolved " != *" $public_ip "* ]]; then
     die "$DOMAIN points at $resolved but this server is $public_ip. Fix the DNS A record (or set SKIP_DNS_CHECK=1 if a proxy sits in front) and re-run."
   fi
   echo "ok: $DOMAIN -> $resolved"
