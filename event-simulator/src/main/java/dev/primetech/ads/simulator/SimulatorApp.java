@@ -19,10 +19,14 @@ public final class SimulatorApp {
 
         var random = new SplittableRandom(config.seed());
         var catalog = AdCatalog.generate(config.campaigns(), random);
+        if (config.kafkaBootstrap() != null && !config.kafkaBootstrap().isBlank()) {
+            CatalogPublisher.publish(config.kafkaBootstrap(), catalog.campaigns());
+        }
         var truth = new GroundTruth();
         var engine = new TrafficEngine(new SessionPlanner(catalog),
                 new FaultInjector(config.duplicateRate(), config.lateRate(), config.invalidRate()),
-                random, truth, config.targetEventsPerSecond(), config.lateDelayMs());
+                random, truth, config.targetEventsPerSecond(), config.lateDelayMs(),
+                new TrafficEngine.Bots(config.botSessionShare(), config.botDevices()));
 
         try (var client = new GatewayClient(config.gatewayUrl(), config.concurrency())) {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> log.info("ground truth: {}", truth.summary())));
@@ -51,6 +55,11 @@ public final class SimulatorApp {
                 if (sleep > 0) {
                     Thread.sleep(sleep);
                 }
+            }
+            // Release held-back late and duplicate copies so the ground truth matches what was sent.
+            List<ClientEvent> pending = engine.drainDelayed();
+            for (int i = 0; i < pending.size(); i += config.batchSize()) {
+                client.submit(List.copyOf(pending.subList(i, Math.min(pending.size(), i + config.batchSize()))));
             }
             client.drain(Duration.ofSeconds(30));
             long elapsed = Math.max(1, (System.currentTimeMillis() - start) / 1000);

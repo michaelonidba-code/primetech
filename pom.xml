@@ -14,6 +14,7 @@
     <module>ads-common</module>
     <module>ingest-gateway</module>
     <module>event-simulator</module>
+    <module>stream-processor</module>
   </modules>
 
   <properties>

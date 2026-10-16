@@ -8,6 +8,7 @@ COPY pom.xml ./
 COPY ads-common ads-common
 COPY ingest-gateway ingest-gateway
 COPY event-simulator event-simulator
+COPY stream-processor stream-processor
 RUN --mount=type=cache,target=/root/.m2 \
     --mount=type=secret,id=truststore,required=false \
     MAVEN_OPTS="$MAVEN_OPTS" mvn -B -q -DskipTests package
@@ -25,3 +26,11 @@ EXPOSE 8080
 
 FROM runtime-base AS simulator
 COPY --from=build /src/event-simulator/target/event-simulator.jar /app/app.jar
+
+# Flink application image: the job jar in usrlib is picked up by "standalone-job" mode.
+FROM flink:2.2.1-java21 AS stream-processor
+# Mount point for checkpoints; a named volume inherits this ownership (Flink runs as "flink").
+USER root
+RUN mkdir -p /flink-data && chown flink:flink /flink-data
+USER flink
+COPY --from=build --chown=flink:flink /src/stream-processor/target/stream-processor.jar /opt/flink/usrlib/stream-processor.jar

@@ -1,5 +1,6 @@
-// The dashboard only polls the gateway from the browser, so it runs as a client-side SPA.
-// That lets the same build be served by Node (Docker) or as static files (GitHub Pages).
+// A client-side SPA: the same build is served by Node (Docker) or as static files (GitHub Pages).
+// Under Node, the server routes in server/api also proxy Flink and Druid; on Pages those
+// panels say they need the Docker stack.
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-01',
   ssr: false,
@@ -12,6 +13,9 @@ export default defineNuxtConfig({
     },
   },
   runtimeConfig: {
+    // Server-only. Overridden with NUXT_FLINK_URL and NUXT_DRUID_URL.
+    flinkUrl: 'http://localhost:8082',
+    druidUrl: 'http://localhost:8888',
     public: {
       // Overridden at runtime with NUXT_PUBLIC_GATEWAY_URL, or per visit with ?gateway=<url>.
       gatewayUrl: 'http://localhost:8080',

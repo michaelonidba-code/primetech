@@ -66,11 +66,142 @@ services:
       - gateway
     environment:
       GATEWAY_URL: http://gateway:8080
+      # Publishes the campaign catalog to campaign-metadata.v1 on start-up.
+      KAFKA_BOOTSTRAP: redpanda:9092
       TARGET_EPS: ${TARGET_EPS:-2000}
       DURATION_SECONDS: ${DURATION_SECONDS:-0}
       CONCURRENCY: ${CONCURRENCY:-16}
+      # Event ids derive from the seed: reusing one replays ids the pipeline will de-duplicate.
+      SEED: ${SEED:-42}
       # Holds every active session's plan: ~225k sessions at 50k events/s.
       JAVA_OPTS: -Xms2g -Xmx2g -XX:+UseZGC -XX:+ZGenerational
+
+  # Flink in application mode: the job manager runs PipelineJob from the image's usrlib.
+  jobmanager:
+    build:
+      context: .
+      target: stream-processor
+    command: standalone-job --job-classname dev.primetech.ads.stream.PipelineJob
+    depends_on:
+      topics:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      FLINK_PROPERTIES: &flink-properties |
+        jobmanager.rpc.address: jobmanager
+        parallelism.default: 4
+        state.backend.type: rocksdb
+        execution.checkpointing.incremental: true
+        execution.checkpointing.dir: file:///flink-data/checkpoints
+        execution.checkpointing.savepoint-dir: file:///flink-data/savepoints
+        execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+        jobmanager.memory.process.size: 1024m
+        taskmanager.numberOfTaskSlots: 4
+        taskmanager.memory.process.size: 3072m
+        taskmanager.memory.managed.fraction: 0.3
+        metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+        metrics.reporter.prom.port: 9249
+    ports:
+      - "8082:8081"   # Flink web UI and REST API
+    volumes:
+      - flink-data:/flink-data
+    restart: unless-stopped
+
+  taskmanager:
+    build:
+      context: .
+      target: stream-processor
+    command: taskmanager
+    depends_on:
+      - jobmanager
+    environment:
+      FLINK_PROPERTIES: *flink-properties
+    volumes:
+      - flink-data:/flink-data
+    restart: unless-stopped
+
+  # --- Druid: real-time OLAP over ad-events-clean.v1 -------------------------------------------
+  # Kafka ingestion rolls events up to one row per minute and dimension combination.
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: druid
+      POSTGRES_PASSWORD: druid-local-only
+      POSTGRES_DB: druid
+    volumes:
+      - druid-metadata:/var/lib/postgresql/data
+
+  zookeeper:
+    image: zookeeper:3.9.6
+    environment:
+      ZOO_MY_ID: 1
+
+  coordinator:
+    image: apache/druid:37.0.0
+    command: coordinator
+    depends_on: [postgres, zookeeper]
+    env_file: infra/druid/druid.env
+    environment:
+      DRUID_XMX: 384m
+      DRUID_XMS: 384m
+    volumes:
+      - druid-shared:/opt/shared
+
+  broker:
+    image: apache/druid:37.0.0
+    command: broker
+    depends_on: [coordinator]
+    env_file: infra/druid/druid.env
+    environment:
+      DRUID_XMX: 512m
+      DRUID_XMS: 512m
+      DRUID_MAXDIRECTMEMORYSIZE: 384m
+
+  historical:
+    image: apache/druid:37.0.0
+    command: historical
+    depends_on: [coordinator]
+    env_file: infra/druid/druid.env
+    environment:
+      DRUID_XMX: 512m
+      DRUID_XMS: 512m
+      DRUID_MAXDIRECTMEMORYSIZE: 384m
+    volumes:
+      - druid-shared:/opt/shared
+
+  middlemanager:
+    image: apache/druid:37.0.0
+    command: middleManager
+    depends_on: [coordinator]
+    env_file: infra/druid/druid.env
+    environment:
+      DRUID_XMX: 128m
+      DRUID_XMS: 128m
+    volumes:
+      - druid-shared:/opt/shared
+
+  router:
+    image: apache/druid:37.0.0
+    command: router
+    depends_on: [coordinator]
+    env_file: infra/druid/druid.env
+    environment:
+      DRUID_XMX: 128m
+      DRUID_XMS: 128m
+    ports:
+      - "8888:8888"   # Druid console and SQL API
+
+  druid-setup:
+    image: apache/druid:37.0.0
+    depends_on:
+      router:
+        condition: service_started
+      topics:
+        condition: service_completed_successfully
+    entrypoint: ["sh", "/specs/submit-supervisor.sh"]
+    volumes:
+      - ./infra/druid:/specs:ro
+    restart: "no"
 
   dashboard:
     build:
@@ -78,8 +209,14 @@ services:
     environment:
       # The browser calls the gateway directly, so this is the host-side address.
       NUXT_PUBLIC_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
+      # Server-side routes reach these over the Compose network.
+      NUXT_FLINK_URL: http://jobmanager:8081
+      NUXT_DRUID_URL: http://router:8888
     ports:
       - "3000:3000"
 
 volumes:
   redpanda-data:
+  flink-data:
+  druid-shared:
+  druid-metadata:

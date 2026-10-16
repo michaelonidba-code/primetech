@@ -17,6 +17,7 @@ final class Session {
     final DeviceType deviceType;
     final String country;
     final boolean consent;
+    final boolean bot;
 
     private final AdCatalog.AdSpec[] ads;
     private final EventType[] types;
@@ -24,12 +25,13 @@ final class Session {
     private int next;
 
     Session(String sessionId, String deviceId, DeviceType deviceType, String country, boolean consent,
-            AdCatalog.AdSpec[] ads, EventType[] types, long[] dueMs) {
+            boolean bot, AdCatalog.AdSpec[] ads, EventType[] types, long[] dueMs) {
         this.sessionId = sessionId;
         this.deviceId = deviceId;
         this.deviceType = deviceType;
         this.country = country;
         this.consent = consent;
+        this.bot = bot;
         this.ads = ads;
         this.types = types;
         this.dueMs = dueMs;
