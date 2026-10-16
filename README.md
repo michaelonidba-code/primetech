@@ -12,6 +12,12 @@ observability) and 6 (load testing and write-up) are complete.** Start with the 
 The dashboard installs as an app on desktop and phone and can be hosted behind HTTPS with
 sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 
+Also in `docs/`: the full technical report as a PDF with every source file
+([docs/report](docs/report/Quila-Visuals-Ads-Eventing-Report.pdf), rebuilt with
+`python3 docs/report/build_report.py . docs/report/Quila-Visuals-Ads-Eventing-Report.pdf`), a one-page
+illustrated overview ([docs/overview.html](docs/overview.html)), app screenshots
+([docs/screenshots](docs/screenshots)) and the Quila Visuals logo files ([docs/brand](docs/brand)).
+
 ```
                  ┌────────────── OpenRTB 2.6 ──────────────┐
                  ▼                                          │
