@@ -3,15 +3,15 @@
 // What is cached, and how:
 //   pages (navigations)         network first, cached copy when offline
 //   /_nuxt/* build assets       cache first: file names are content-hashed, so never stale
-//   icons, manifest             served from cache, refreshed in the background
+//   icons, logo, manifest       served from cache, refreshed in the background
 //   /api/*                      NEVER cached: live, signed-in data must not outlive the session
 //                               or be left on a shared device
-const VERSION = 'ae-v2'
+const VERSION = 'ae-v3'
 const SHELL = `${VERSION}-shell`
 const ASSETS = `${VERSION}-assets`
 const MAX_ASSETS = 80
 const scope = new URL(self.registration.scope)
-const PRECACHE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'].map(
+const PRECACHE = ['./', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'brand-logo.png'].map(
   (p) => new URL(p, scope).href,
 )
 

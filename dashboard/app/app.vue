@@ -12,9 +12,12 @@ watch(online, (now) => now && session.check())
 <template>
   <main>
     <header>
-      <div>
-        <h1>Ads Eventing</h1>
-        <p class="muted">Live pipeline · ad server → player → gateway → Kafka → Flink → Druid</p>
+      <div class="title">
+        <BrandLogo :height="48" />
+        <div>
+          <h1>Ads Eventing</h1>
+          <p class="muted">Live pipeline · ad server → player → gateway → Kafka → Flink → Druid</p>
+        </div>
       </div>
       <div class="actions">
         <button v-if="canPrompt" type="button" class="ghost" @click="install">Install app</button>
@@ -67,6 +70,11 @@ header {
   justify-content: space-between;
   align-items: flex-end;
   gap: 12px;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 h1 {
   margin: 0;

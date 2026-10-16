@@ -15,7 +15,8 @@ export default defineNuxtConfig({
       meta: [
         // viewport-fit=cover lets the installed app draw under phone notches; main.css pads with safe-area insets.
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'description', content: 'Live ads eventing pipeline: ad serving, pacing, stream processing and delivery.' },
+        { name: 'description', content: 'Live ads eventing pipeline: ad serving, pacing, stream processing and delivery. By Quila Visuals.' },
+        { name: 'author', content: 'Quila Visuals' },
         { name: 'theme-color', content: '#f9f9f7', media: '(prefers-color-scheme: light)' },
         { name: 'theme-color', content: '#0d0d0d', media: '(prefers-color-scheme: dark)' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
