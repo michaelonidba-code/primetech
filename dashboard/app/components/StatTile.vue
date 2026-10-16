@@ -30,7 +30,8 @@ defineProps<{
   font-size: 13px;
 }
 .value {
-  font-size: 28px;
+  font-size: clamp(22px, 6.5vw, 28px);
+  overflow-wrap: anywhere;
   font-weight: 600;
   letter-spacing: -0.01em;
 }

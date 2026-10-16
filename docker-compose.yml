@@ -280,13 +280,17 @@ services:
     build:
       context: ./dashboard
     environment:
-      # The browser calls the gateway directly, so this is the host-side address.
-      NUXT_PUBLIC_GATEWAY_URL: ${GATEWAY_PUBLIC_URL:-http://localhost:8080}
-      # Server-side routes reach these over the Compose network.
+      # Server-side routes reach these over the Compose network; the browser only talks to the dashboard.
+      NUXT_GATEWAY_URL: http://gateway:8080
       NUXT_FLINK_URL: http://jobmanager:8081
       NUXT_DRUID_URL: http://router:8888
       NUXT_AD_SERVER_URL: http://ad-server:8090
       NUXT_PACING_URL: http://pacing-service:8095
+      # Sign-in is off for local development. deploy/docker-compose.prod.yml turns it on; to try it
+      # locally, set DASHBOARD_AUTH_DISABLED=false plus DASHBOARD_USERS and DASHBOARD_SESSION_SECRET.
+      NUXT_AUTH_DISABLED: ${DASHBOARD_AUTH_DISABLED:-true}
+      NUXT_AUTH_USERS: ${DASHBOARD_USERS:-}
+      NUXT_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:-}
     ports:
       - "3000:3000"
 

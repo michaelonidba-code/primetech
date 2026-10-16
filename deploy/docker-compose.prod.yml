@@ -1,0 +1,51 @@
+# Hosted deployment overlay: one public entry point (Caddy, HTTPS) in front of the dashboard,
+# which serves the installable app and the signed-in, read-only API. Nothing else is published:
+# Kafka, Flink, Druid, the ad server and the pacing service are reachable only on the Compose
+# network. See README "Hosting".
+#
+#   cp deploy/.env.example deploy/.env    # then fill it in
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on: [dashboard]
+    environment:
+      DASHBOARD_DOMAIN: ${DASHBOARD_DOMAIN:?set DASHBOARD_DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # certificates: keep them, or Let's Encrypt rate limits bite on redeploys
+      - caddy-config:/config
+
+  dashboard:
+    restart: unless-stopped
+    environment:
+      NUXT_AUTH_DISABLED: "false"
+      NUXT_AUTH_USERS: ${DASHBOARD_USERS:?set DASHBOARD_USERS in deploy/.env}
+      NUXT_SESSION_SECRET: ${DASHBOARD_SESSION_SECRET:?set DASHBOARD_SESSION_SECRET in deploy/.env}
+      NUXT_TRUST_PROXY: "true"
+    ports: !reset []
+
+  # Internal only in production.
+  redpanda:
+    ports: !reset []
+  console:
+    ports: !reset []
+  gateway:
+    ports: !reset []
+  jobmanager:
+    ports: !reset []
+  router:
+    ports: !reset []
+  ad-server:
+    ports: !reset []
+  pacing-service:
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:

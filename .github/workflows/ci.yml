@@ -35,6 +35,8 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
       - run: npm ci
       - run: npx nuxt typecheck
+      - run: npm test
+      - run: npm run build
       - run: npm run generate
 
   docker:
@@ -43,3 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build all images
         run: docker compose build
+      - name: Validate the production overlay
+        run: >
+          DASHBOARD_DOMAIN=ci.example DASHBOARD_USERS=ci=x DASHBOARD_SESSION_SECRET=x
+          docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml config --quiet

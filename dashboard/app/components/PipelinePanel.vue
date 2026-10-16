@@ -81,6 +81,12 @@ const checkpointStale = computed(() => checkpointAge.value !== null && checkpoin
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 12px;
 }
+/* Phones: two tiles per row instead of one, halving the scroll to the charts. */
+@media (max-width: 520px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .tiles :deep(.card) {
   background: var(--page);
 }

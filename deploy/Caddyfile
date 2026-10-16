@@ -1,0 +1,14 @@
+# Automatic HTTPS: Caddy obtains and renews a certificate for DASHBOARD_DOMAIN (its DNS must point
+# at this host, with ports 80 and 443 open). With DASHBOARD_DOMAIN=localhost it uses its own local CA.
+{$DASHBOARD_DOMAIN} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# Caddy replaces any client-supplied X-Forwarded-For/-Proto, so the dashboard
+	# (NUXT_TRUST_PROXY=true) sees the real client address for login rate limits.
+	reverse_proxy dashboard:3000
+}

@@ -11,6 +11,9 @@ RUN npx nuxt prepare && npm run build
 FROM node:22-alpine
 WORKDIR /app
 COPY --from=build /app/.output ./.output
+# The password-hash tool, for creating NUXT_AUTH_USERS entries without Node installed locally.
+COPY --from=build /app/scripts/hash-password.ts ./tools/scripts/
+COPY --from=build /app/server/utils/auth.ts ./tools/server/utils/
 ENV HOST=0.0.0.0 PORT=3000 NODE_ENV=production
 USER node
 EXPOSE 3000

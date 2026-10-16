@@ -7,6 +7,8 @@ measured.
 
 This repository is being built in phases. **Phases 1 (event backbone), 2 (stream processing
 and real-time OLAP), 3 (ad serving with OpenRTB auctions) and 4 (budget pacing) are complete.**
+The dashboard installs as an app on desktop and phone and can be hosted behind HTTPS with
+sign-in ([Hosting](#hosting-the-dashboard-as-an-app)).
 
 ```
                  ┌────────────── OpenRTB 2.6 ──────────────┐
@@ -42,7 +44,7 @@ docker compose up --build
 
 | What | Where |
 |---|---|
-| Dashboard | http://localhost:3000 |
+| Dashboard | http://localhost:3000 (sign-in is off locally; see [Hosting](#hosting-the-dashboard-as-an-app)) |
 | Gateway API | http://localhost:8080 (`/v1/events`, `/stats`, `/metrics`, `/health`) |
 | Ad server API | http://localhost:8090 (`/v1/ad-requests`, `/stats`, `/metrics`, `/health`) |
 | Pacing service | http://localhost:8095 (`/stats`, `/metrics`, `/health`) |
@@ -366,6 +368,65 @@ impression joined to its auction) gave 15 s.
 * **Traffic too thin for a budget:** the throttle reaches 1 and the line item reports
   `UNDER_DELIVERING`, instead of looking merely "behind".
 
+## Hosting the dashboard as an app
+
+The dashboard is an installable web app (PWA): from the browser it installs on Windows, macOS,
+Linux, Android and iOS with its own icon and window, and opens offline. One server hosts both
+the app and the API it reads, so there is a single HTTPS origin and nothing cross-site.
+
+```
+phone / desktop app ──HTTPS──► Caddy ──► dashboard (Nuxt server) ──► gateway, Flink, Druid,
+     (PWA)               :443   TLS, HSTS  app + read-only API        ad server, pacing service
+                                           sign-in required           (Compose network only)
+```
+
+### Deploy
+
+On a host with Docker, about 10 GB of memory for the stack, and a DNS name pointing at it with
+ports 80 and 443 open:
+
+```bash
+cp deploy/.env.example deploy/.env
+cd dashboard && npm ci && npm run hash-password -- alice   # paste the line into DASHBOARD_USERS
+openssl rand -base64 48                                    # paste into DASHBOARD_SESSION_SECRET
+cd .. && docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+```
+
+Caddy obtains and renews a Let's Encrypt certificate for `DASHBOARD_DOMAIN`. The overlay
+publishes only ports 80 and 443; Kafka, Flink, Druid, the ad server and the pacing service are
+reachable only inside the Compose network.
+
+### Install
+
+* **Desktop (Chrome, Edge) and Android:** an **Install app** button appears in the dashboard header
+  (or use the install icon in the address bar).
+* **iPhone and iPad:** in Safari, **Share → Add to Home Screen**. The **Install app** button shows
+  these steps.
+
+### Security model
+
+| | |
+|---|---|
+| Sign-in | User names and scrypt password hashes in `NUXT_AUTH_USERS`; no sign-up, no database |
+| Sessions | HMAC-signed cookie, `HttpOnly`, `Secure`, `SameSite=Strict`, 12 h. Changing a user's password, or the secret, ends their sessions |
+| API | Read-only: every data route is `GET` and requires a session; anything else is 405 |
+| Brute force | Failed logins limited to 20 per 15 min per client address and 10 per user name; unknown names take as long to reject as known ones |
+| Client address | Taken from `X-Forwarded-For` only with `NUXT_TRUST_PROXY=true`, which the overlay sets because Caddy overwrites the header; spoofed headers were tested and do not evade the limit |
+| CSRF | `SameSite=Strict`, JSON-only login, and a same-origin check on login |
+| Fails closed | Sign-in on but users or secret missing → the API answers 503, it never serves data unauthenticated. Only `NUXT_AUTH_DISABLED=true` (the local default) turns it off |
+| Offline data | The service worker caches the app shell only, never `/api/` responses, so no delivery or spend data stays on a device after signing out |
+| Headers | HSTS (Caddy), `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `Cache-Control: no-store` on the API |
+
+**Verified** against the full stack behind Caddy, over HTTPS:
+* Every internal port is closed from outside, and HTTP redirects to HTTPS.
+* Each data route returns 401 without a session and live data with one.
+* A form-encoded or cross-origin login is refused, and a tampered cookie returns 401.
+* The 21st failed login in a window returns 429, even with a different spoofed `X-Forwarded-For` on every attempt.
+
+Playwright repeated sign-in, wrong-password feedback, service-worker activation, manifest
+validity, offline launch, sign-out and the absence of cached API data at desktop and phone
+sizes, in light and dark mode.
+
 ## Measured results
 
 ### Phase 1: ingest
@@ -538,6 +599,8 @@ including Kafka producer and JVM metrics.
 | `DSP_ENDPOINTS` | ad server | `name=url,...` |
 | `TMAX_MS`, `FLOOR_CPM`, `AUCTION_TYPE` | ad server | `120`, `5.00`, `first` (or `second`) |
 | `DIRECT_PARTICIPATION`, `MAX_IN_FLIGHT`, `DSP_FREQUENCY_CAP_PER_HOUR` | ad server | `0.015` (fallback without pacing), `256`, `4` |
+| `DASHBOARD_AUTH_DISABLED`, `DASHBOARD_USERS`, `DASHBOARD_SESSION_SECRET` | dashboard (local Compose) | `true`, empty, empty. In production set via `deploy/.env` (see Hosting) |
+| `NUXT_SESSION_TTL_HOURS`, `NUXT_TRUST_PROXY` | dashboard | `12`, `false` (`true` in the production overlay) |
 | `PACING_PERIOD_MINUTES`, `BUDGET_SCALE` | ad server, pacing service | `30`, `1.0` (budgets sized for 30 min at ~2,000 events/s) |
 | `PACING_TICK_SECONDS` | pacing service | `10` |
 | `REDIS_URL`, `DEVICE_ID_SECRET` | ad server | unset = in-process caps; secret must match the gateway's |
@@ -553,9 +616,12 @@ including Kafka producer and JVM metrics.
 
 * `.github/workflows/ci.yml` runs the Maven build and tests, the dashboard typecheck and static
   build, and builds every Docker image.
-* `.github/workflows/nuxtjs.yml` publishes the dashboard to GitHub Pages (enable Pages with source
-  "GitHub Actions"). The hosted page talks to whichever gateway you give it with `?gateway=`;
-  the Flink and Druid panels need the server routes, so they only work in the Docker stack.
+* `.github/workflows/nuxtjs.yml` publishes a static build of the dashboard to GitHub Pages (enable
+  Pages with source "GitHub Actions"). It has no server, so it talks to whichever gateway you
+  give it with `?gateway=`, and the other panels say they need the stack. For the full app with
+  sign-in, see [Hosting](#hosting-the-dashboard-as-an-app).
+* The dashboard's unit tests (`npm test`, sign-in and session logic) run in CI, as does a check
+  that the production overlay is valid.
 
 ## Known issues
 
@@ -572,6 +638,11 @@ including Kafka producer and JVM metrics.
 * The pacing service keeps its state in memory and rebuilds it from Kafka on restart; with
   several ad server instances, served spend is shared through Redis but each instance sees the
   others' spend up to a second late.
+* Dashboard sessions are stateless signed cookies. Signing out clears the cookie, but a copied
+  cookie stays valid until it expires (12 h) unless the user's password or the session secret is
+  changed. Login rate limits are in memory, per dashboard instance, and reset on restart.
+* The per-user login limit means someone who knows a user name can lock that user out for 15
+  minutes with wrong passwords. That trade-off favours resisting password guessing.
 * Druid's supervisor reports a lag of a few records per partition on the clean topic. Those are
   Kafka transaction markers, which a `read_committed` consumer never receives as records.
 * Flink operator metrics (duplicates dropped, IVT flagged) restart from zero when the job

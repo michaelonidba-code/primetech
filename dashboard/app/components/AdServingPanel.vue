@@ -126,6 +126,12 @@ p {
   gap: 12px;
   margin-bottom: 16px;
 }
+/* Phones: two tiles per row instead of one, halving the scroll to the charts. */
+@media (max-width: 520px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 .tiles :deep(.card) {
   background: var(--page);
 }
