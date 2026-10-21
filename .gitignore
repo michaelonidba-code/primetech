@@ -13,3 +13,6 @@ dist
 .env
 .DS_Store
 deploy/.admin-password
+
+# Server-local Caddy config (see deploy/site.d/README.md)
+deploy/site.d/*.caddy

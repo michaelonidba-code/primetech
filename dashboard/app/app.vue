@@ -4,11 +4,11 @@ const online = useOnline()
 const { canPrompt, iosHint, install } = useInstall()
 const showIosHint = ref(false)
 
-// Two views once signed in: the YouTube growth console (default) and the ad pipeline. The choice
-// lives in the URL hash so it survives reloads and can be bookmarked.
-const tab = ref<'youtube' | 'pipeline'>('youtube')
+// Views once signed in: the YouTube growth console (default), sponsors on 1world1dollar.com, and the
+// ad pipeline. The choice lives in the URL hash so it survives reloads and can be bookmarked.
+const tab = ref<'youtube' | 'sponsors' | 'pipeline'>('youtube')
 function readTab() {
-  tab.value = location.hash === '#pipeline' ? 'pipeline' : 'youtube'
+  tab.value = location.hash === '#pipeline' ? 'pipeline' : location.hash === '#sponsors' ? 'sponsors' : 'youtube'
 }
 onMounted(() => {
   readTab()
@@ -64,9 +64,11 @@ watch(online, (now) => now && session.check())
     <template v-else>
       <nav class="tabs" aria-label="Views">
         <a href="#youtube" :aria-current="tab === 'youtube' ? 'page' : undefined">YouTube growth</a>
+        <a href="#sponsors" :aria-current="tab === 'sponsors' ? 'page' : undefined">Sponsors</a>
         <a href="#pipeline" :aria-current="tab === 'pipeline' ? 'page' : undefined">Ad pipeline</a>
       </nav>
       <GrowthView v-if="tab === 'youtube'" />
+      <SponsorsView v-else-if="tab === 'sponsors'" />
       <DashboardView v-else />
     </template>
   </main>
@@ -166,6 +168,7 @@ header p {
 .tabs {
   display: flex;
   gap: 4px;
+  overflow-x: auto;
   border-bottom: 1px solid var(--border);
 }
 .tabs a {
@@ -177,6 +180,7 @@ header p {
   text-decoration: none;
   color: var(--ink-muted);
   padding: 10px 14px;
+  white-space: nowrap;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
 }

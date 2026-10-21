@@ -107,6 +107,18 @@ public final class AdCatalog {
         return new AdCatalog(List.copyOf(ads), List.copyOf(metadata), List.copyOf(lineItemConfigs), cumulative);
     }
 
+    /**
+     * A catalog of real campaigns (for example sponsor campaigns loaded from a file). Every ad gets the
+     * same weight; {@link #pick} is only used by the simulator. May be empty.
+     */
+    public static AdCatalog of(List<AdSpec> ads, List<CampaignMetadata> campaigns, List<LineItemConfig> lineItems) {
+        double[] cumulative = new double[ads.size()];
+        for (int i = 0; i < cumulative.length; i++) {
+            cumulative[i] = i + 1;
+        }
+        return new AdCatalog(List.copyOf(ads), List.copyOf(campaigns), List.copyOf(lineItems), cumulative);
+    }
+
     public AdSpec pick(RandomGenerator random) {
         double r = random.nextDouble() * cumulativeWeights[cumulativeWeights.length - 1];
         int lo = 0, hi = cumulativeWeights.length - 1;

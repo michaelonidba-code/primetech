@@ -16,21 +16,32 @@ import java.util.random.RandomGenerator;
  * spent.
  */
 public final class DirectDemand {
-    private final Map<String, List<AdCatalog.AdSpec>> byLineItem = new HashMap<>();
-    private final Map<String, LineItemConfig.Tier> tiers = new HashMap<>();
+    private record State(Map<String, List<AdCatalog.AdSpec>> byLineItem, Map<String, LineItemConfig.Tier> tiers) {
+    }
+
+    private volatile State state;
     private final PacingView pacing;
 
     public DirectDemand(AdCatalog catalog, PacingView pacing) {
+        this.pacing = pacing;
+        update(catalog);
+    }
+
+    /** Swaps in a new catalog (sponsor campaigns changed). In-flight auctions keep the one they started with. */
+    public void update(AdCatalog catalog) {
+        var byLineItem = new HashMap<String, List<AdCatalog.AdSpec>>();
         for (AdCatalog.AdSpec ad : catalog.ads()) {
             byLineItem.computeIfAbsent(ad.lineItemId(), k -> new ArrayList<>()).add(ad);
         }
+        var tiers = new HashMap<String, LineItemConfig.Tier>();
         catalog.lineItems().forEach(l -> tiers.put(l.lineItemId(), l.tier()));
-        this.pacing = pacing;
+        state = new State(byLineItem, tiers);
     }
 
     public List<Candidate> eligible(String country, DeviceType deviceType, RandomGenerator random) {
         var out = new ArrayList<Candidate>();
-        for (List<AdCatalog.AdSpec> creatives : byLineItem.values()) {
+        State current = state;
+        for (List<AdCatalog.AdSpec> creatives : current.byLineItem().values()) {
             AdCatalog.AdSpec first = creatives.get(0);
             if (!first.targets(country, deviceType)) {
                 continue;
@@ -39,7 +50,7 @@ public final class DirectDemand {
             if (throttle <= 0 || (throttle < 1 && random.nextDouble() >= throttle)) {
                 continue;
             }
-            boolean guaranteed = tiers.get(first.lineItemId()) == LineItemConfig.Tier.GUARANTEED;
+            boolean guaranteed = current.tiers().get(first.lineItemId()) == LineItemConfig.Tier.GUARANTEED;
             for (AdCatalog.AdSpec ad : creatives) {
                 out.add(new Candidate(Candidate.DIRECT, null, ad.campaignId(), ad.lineItemId(), ad.adId(),
                         ad.creativeId(), ad.advertiserId(), ad.durationSeconds(), ad.cpmMicros(),

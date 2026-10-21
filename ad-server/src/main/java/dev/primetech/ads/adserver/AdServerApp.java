@@ -12,6 +12,9 @@ import org.slf4j.LoggerFactory;
 
 import dev.primetech.ads.common.pacing.PacingPeriod;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.SplittableRandom;
@@ -41,7 +44,10 @@ public final class AdServerApp {
             caps = new RedisFrequencyCaps(config.redisUrl());
         }
         var sink = new KafkaDecisionSink(config.kafkaBootstrap(), registry);
-        var catalog = AdCatalog.generate(config.campaigns(), new SplittableRandom(config.seed()));
+        Path catalogPath = config.catalogFile() == null ? null : Path.of(config.catalogFile());
+        var catalog = catalogPath == null
+                ? AdCatalog.generate(config.campaigns(), new SplittableRandom(config.seed()))
+                : CatalogFile.read(catalogPath);
         // Budgets as the pacing service and this server will both see them.
         var lineItems = catalog.lineItems().stream()
                 .map(l -> new LineItemConfig(l.lineItemId(), l.campaignId(), l.advertiserId(), l.tier(), l.cpmMicros(),
@@ -81,7 +87,60 @@ public final class AdServerApp {
             }
         }, "shutdown"));
         server.start();
-        log.info("{} direct campaigns, DSPs {}, {}", catalog.campaigns().size(), config.dsps().keySet(), config.settings());
+        log.info("{} direct campaigns ({}), DSPs {}, {}", catalog.campaigns().size(),
+                catalogPath == null ? "generated" : catalogPath, config.dsps().keySet(), config.settings());
+        if (catalogPath != null) {
+            watchCatalog(catalogPath, config.budgetScale(), direct, pacing, service, sink);
+        }
+    }
+
+    /**
+     * Reloads the sponsor catalog when the dashboard rewrites it: announces campaigns (enrichment),
+     * publishes line items (pacing service), then swaps budgets and direct demand. A malformed file
+     * is logged and ignored, so the live catalog keeps serving.
+     */
+    private static void watchCatalog(Path path, double budgetScale, DirectDemand direct, PacingView pacing,
+                                     AdDecisionService service, DecisionSink sink) {
+        Thread.ofPlatform().name("catalog-watch").daemon().start(() -> {
+            FileTime seen = modified(path);
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(Duration.ofSeconds(10).toMillis());
+                } catch (InterruptedException e) {
+                    return;
+                }
+                FileTime now = modified(path);
+                if (java.util.Objects.equals(now, seen)) {
+                    continue;
+                }
+                try {
+                    AdCatalog next = CatalogFile.read(path);
+                    var items = next.lineItems().stream()
+                            .map(l -> new LineItemConfig(l.lineItemId(), l.campaignId(), l.advertiserId(), l.tier(),
+                                    l.cpmMicros(), Math.round(l.periodBudgetMicros() * budgetScale)))
+                            .toList();
+                    service.announce(next.campaigns()).get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    CompletableFuture.allOf(items.stream().map(sink::lineItem).toArray(CompletableFuture[]::new))
+                            .get(30, java.util.concurrent.TimeUnit.SECONDS);
+                    pacing.lineItems(items);
+                    direct.update(next);
+                    seen = now;
+                    log.info("catalog reloaded: {} campaigns, {} line items, {} creatives",
+                            next.campaigns().size(), items.size(), next.ads().size());
+                } catch (Exception e) {
+                    seen = now; // don't retry a bad file every 10 s; the next write is picked up
+                    log.error("catalog {} not loaded, keeping the previous one: {}", path, e.toString());
+                }
+            }
+        });
+    }
+
+    private static FileTime modified(Path path) {
+        try {
+            return Files.getLastModifiedTime(path);
+        } catch (java.io.IOException e) {
+            return null;
+        }
     }
 
     private AdServerApp() {

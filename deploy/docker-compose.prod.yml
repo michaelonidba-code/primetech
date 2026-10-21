@@ -18,8 +18,10 @@ services:
       - "443:443/udp" # HTTP/3
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./deploy/site.d:/etc/caddy/site.d:ro # server-local additions, e.g. a www redirect
       - caddy-data:/data # certificates: keep them, or Let's Encrypt rate limits bite on redeploys
       - caddy-config:/config
+      - sponsor-media:/srv/media:ro # sponsor videos + creatives.json, served at /media
 
   dashboard:
     restart: unless-stopped
@@ -31,6 +33,9 @@ services:
       NUXT_ALERT_WEBHOOK_TOKEN: ${ALERT_WEBHOOK_TOKEN:?set ALERT_WEBHOOK_TOKEN in deploy/.env}
       NUXT_VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@${DASHBOARD_DOMAIN}}
     ports: !reset []
+    volumes:
+      - sponsor-catalog:/app/catalog # catalog.json for the ad server
+      - sponsor-media:/app/media # uploaded sponsor videos + creatives.json
 
   alertmanager:
     environment:
@@ -51,15 +56,29 @@ services:
     ports: !reset []
   gateway:
     ports: !reset []
+    environment:
+      # Only the publisher site's sponsor tag may send events from a browser.
+      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com}
   jobmanager:
     ports: !reset []
   router:
     ports: !reset []
   ad-server:
     ports: !reset []
+    restart: unless-stopped
+    # Start after the dashboard so the shared catalog volume is created with its (writable) ownership.
+    depends_on:
+      dashboard:
+        condition: service_started
     environment:
-      # No mock bidders in production: only real demand (none until real DSPs or campaigns are added).
+      # No mock bidders in production: only real demand, the sponsor campaigns approved in the dashboard.
       DSP_ENDPOINTS: ""
+      CATALOG_FILE: /catalog/catalog.json
+      # Sponsors enter every auction until the pacing service steers them; budgets still stop them.
+      DIRECT_PARTICIPATION: "1.0"
+      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com}
+    volumes:
+      - sponsor-catalog:/catalog:ro
   pacing-service:
     ports: !reset []
   audit-service:
@@ -82,3 +101,5 @@ services:
 volumes:
   caddy-data:
   caddy-config:
+  sponsor-catalog:
+  sponsor-media:

@@ -115,6 +115,12 @@ else
   fi
 fi
 
+# Pseudonymises device ids in the gateway and ad server. Added to older .env files that lack it.
+if ! grep -q '^DEVICE_ID_SECRET=' "$ENV_FILE"; then
+  echo "DEVICE_ID_SECRET=$(rand 64 64)" >> "$ENV_FILE"
+  echo "added DEVICE_ID_SECRET to deploy/.env"
+fi
+
 # --- Start ------------------------------------------------------------------------------
 if [[ "${NO_BUILD:-0}" == 1 ]]; then
   say "Starting the stack"
@@ -123,6 +129,9 @@ else
   say "Building and starting the stack (the first build takes 10-20 minutes)"
   "${COMPOSE[@]}" up -d --build
 fi
+
+# The dashboard (user node) writes the sponsor catalog and videos into shared volumes.
+"${COMPOSE[@]}" exec -T -u root dashboard chown node:node /app/catalog /app/media >/dev/null 2>&1 || true
 
 say "Waiting for https://$DOMAIN to answer"
 curl_opts=(-fsS --max-time 10)

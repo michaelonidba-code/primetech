@@ -21,7 +21,8 @@ public record AdServerConfig(
         double budgetScale,
         int maxInFlight,
         long seed,
-        String corsOrigin) {
+        String corsOrigin,
+        String catalogFile) {
 
     public static AdServerConfig fromEnv(Map<String, String> env) {
         String auction = env.getOrDefault("AUCTION_TYPE", "first");
@@ -53,7 +54,13 @@ public record AdServerConfig(
                 Double.parseDouble(env.getOrDefault("BUDGET_SCALE", "1.0")),
                 Integer.parseInt(env.getOrDefault("MAX_IN_FLIGHT", "256")),
                 Long.parseLong(env.getOrDefault("SEED", "42")),
-                env.getOrDefault("CORS_ORIGIN", "*"));
+                env.getOrDefault("CORS_ORIGIN", "*"),
+                // Real direct-sold campaigns (sponsors) written by the dashboard. Unset: the generated practice catalog.
+                blankToNull(env.get("CATALOG_FILE")));
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 
     /** {@code name=url,name=url}, e.g. {@code premium-dsp=http://dsp-premium:9000/openrtb2/bid}. */
