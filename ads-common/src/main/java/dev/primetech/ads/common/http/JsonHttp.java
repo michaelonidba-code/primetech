@@ -39,11 +39,43 @@ public final class JsonHttp {
         }
     }
 
-    public static void cors(HttpExchange ex, String origin) {
+    /**
+     * Adds CORS headers. {@code allowed} is {@code *} or a comma-separated list of origins
+     * (e.g. {@code https://example.org,https://www.example.org}); a listed request origin is echoed back.
+     */
+    public static void cors(HttpExchange ex, String allowed) {
         var h = ex.getResponseHeaders();
+        String origin = allowedOrigin(allowed, ex.getRequestHeaders().getFirst("Origin"));
         h.set("Access-Control-Allow-Origin", origin);
+        if (!origin.equals("*")) {
+            h.add("Vary", "Origin");
+        }
         h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
         h.set("Access-Control-Allow-Headers", "Content-Type");
+    }
+
+    /**
+     * The Access-Control-Allow-Origin value for a request: {@code *} when any origin is allowed, the
+     * request's origin when it is listed, otherwise the first listed origin (which the browser rejects).
+     */
+    public static String allowedOrigin(String allowed, String requestOrigin) {
+        if (allowed == null || allowed.isBlank() || allowed.trim().equals("*")) {
+            return "*";
+        }
+        String first = null;
+        for (String part : allowed.split(",")) {
+            String o = part.trim();
+            if (o.isEmpty()) {
+                continue;
+            }
+            if (first == null) {
+                first = o;
+            }
+            if (o.equalsIgnoreCase(requestOrigin)) {
+                return requestOrigin;
+            }
+        }
+        return first == null ? "*" : first;
     }
 
     /** Query string parameter, or null. Values are URL-decoded. */

@@ -12,6 +12,10 @@ public interface PacingView {
     /** Records a served impression's price against the line item's budget. */
     void served(String lineItemId, long priceMicros);
 
+    /** The catalog changed: these are now the line items and budgets. */
+    default void lineItems(java.util.Collection<dev.primetech.ads.common.catalog.LineItemConfig> lineItems) {
+    }
+
     /** Every line item at the same fixed participation and no budget: for tests and running without Redis. */
     static PacingView fixed(double participation) {
         return new PacingView() {

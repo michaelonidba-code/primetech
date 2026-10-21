@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.primetech.ads.common.IngestRequest;
 import dev.primetech.ads.common.Json;
+import dev.primetech.ads.common.http.JsonHttp;
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -118,10 +119,7 @@ public final class GatewayServer implements AutoCloseable {
     }
 
     private void addCors(HttpExchange ex) {
-        var h = ex.getResponseHeaders();
-        h.set("Access-Control-Allow-Origin", config.corsOrigin());
-        h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        h.set("Access-Control-Allow-Headers", "Content-Type");
+        JsonHttp.cors(ex, config.corsOrigin());
     }
 
     /** Reads at most {@code limit} bytes; returns null if the body is larger. */

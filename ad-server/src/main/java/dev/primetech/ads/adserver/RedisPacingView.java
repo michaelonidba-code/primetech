@@ -42,7 +42,7 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
 
     private final JedisPooled redis;
     private final PacingPeriod period;
-    private final Map<String, LineItemConfig> configs;
+    private volatile Map<String, LineItemConfig> configs;
     private final double fallbackThrottle;
     private final LongSupplier clock;
     private final Counter fallbacks;
@@ -77,6 +77,13 @@ public final class RedisPacingView implements PacingView, AutoCloseable {
         registry.gauge("adserver.served.unwritten.micros", ledger, ServedLedger::unwrittenMicros);
         refresh();
         this.refresher = Thread.ofPlatform().name("pacing-refresh").daemon().start(this::refreshLoop);
+    }
+
+    @Override
+    public void lineItems(Collection<LineItemConfig> lineItems) {
+        var byId = new HashMap<String, LineItemConfig>();
+        lineItems.forEach(l -> byId.put(l.lineItemId(), l));
+        configs = Map.copyOf(byId);
     }
 
     @Override

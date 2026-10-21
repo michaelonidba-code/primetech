@@ -1,6 +1,7 @@
 // Every data route is read-only and requires a signed session cookie. The writes are signing in and
 // out, (un)subscribing this device to notifications, Alertmanager's webhook, and the YouTube growth
-// console (Google settings, launching and starting/pausing ad campaigns), all signed-in only.
+// console (Google settings, launching and starting/pausing ad campaigns) and sponsor campaigns, all
+// signed-in only.
 // The alert webhook authenticates with its own bearer token (Alertmanager has no session). Google's
 // OAuth callback arrives cross-site without the SameSite=Strict cookie; a single-use state guards it.
 const OPEN = new Set(['/api/health', '/api/auth/login', '/api/auth/logout', '/api/alerts/webhook', '/api/google/callback'])
@@ -14,6 +15,10 @@ const WRITES = new Set([
   '/api/google/disconnect',
   '/api/ads/launch',
   '/api/ads/status',
+  '/api/sponsors/save',
+  '/api/sponsors/upload',
+  '/api/sponsors/status',
+  '/api/sponsors/delete',
 ])
 
 export default defineEventHandler((event) => {

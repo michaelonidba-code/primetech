@@ -13,5 +13,40 @@
 	# Alertmanager calls the alert webhook inside the Compose network; it is never public.
 	respond /api/alerts/webhook 404
 
+	# Sponsor ad network, called by the sponsor tag (/tag/sponsor-v1.js) on publisher sites. The ad
+	# server and gateway only allow the publisher origin (CORS_ORIGIN). Requests are small JSON.
+	handle /ads/v1/ad-requests {
+		request_body {
+			max_size 16KB
+		}
+		rewrite * /v1/ad-requests
+		reverse_proxy ad-server:8090
+	}
+	handle /ads/v1/events {
+		request_body {
+			max_size 64KB
+		}
+		rewrite * /v1/events
+		reverse_proxy gateway:8080
+	}
+
+	# Sponsor videos and the public creative list, written by the dashboard. Upload temp files stay hidden.
+	handle_path /media/* {
+		root * /srv/media
+		@manifest path /creatives.json
+		header @manifest {
+			Access-Control-Allow-Origin *
+			Cache-Control "public, max-age=60"
+		}
+		@video path *.mp4
+		header @video Cache-Control "public, max-age=604800, immutable"
+		file_server {
+			hide .*
+		}
+	}
+
 	reverse_proxy dashboard:3000
 }
+
+# Server-local additions (not in git), e.g. a www redirect. See deploy/site.d/README.md.
+import /etc/caddy/site.d/*.caddy

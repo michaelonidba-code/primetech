@@ -62,6 +62,15 @@ export default defineNuxtConfig({
     adsActionsLogPath: '.data/ads-actions.jsonl', // NUXT_ADS_ACTIONS_LOG_PATH: who launched/started/paused what
     googleAdsApiVersion: 'v26', // NUXT_GOOGLE_ADS_API_VERSION
     adsMaxDailyBudget: 1000, // NUXT_ADS_MAX_DAILY_BUDGET: cap on the daily budget the console accepts
+    // Sponsor ad network. The store is private; the catalog is read by the ad server (CATALOG_FILE);
+    // the media directory (videos + creatives.json) is served publicly at /media by Caddy.
+    sponsorsStorePath: '.data/sponsors.json', // NUXT_SPONSORS_STORE_PATH
+    sponsorsActionsLogPath: '.data/sponsor-actions.jsonl', // NUXT_SPONSORS_ACTIONS_LOG_PATH
+    sponsorsCatalogPath: 'catalog/catalog.json', // NUXT_SPONSORS_CATALOG_PATH
+    sponsorsMediaDir: 'media', // NUXT_SPONSORS_MEDIA_DIR
+    pacingPeriodMinutes: 30, // NUXT_PACING_PERIOD_MINUTES: must match the ad server and pacing service
+    sponsorFloorCpm: 5, // NUXT_SPONSOR_FLOOR_CPM: must be at least the ad server's FLOOR_CPM
+    sponsorMaxUploadMb: 80, // NUXT_SPONSOR_MAX_UPLOAD_MB
     public: {
       // "proxy": the browser reads gateway stats through /api/gateway (Node builds).
       // "direct": it calls the gateway itself (the static Pages build, or ?gateway=<url>).
