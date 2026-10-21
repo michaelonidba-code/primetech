@@ -57,12 +57,27 @@ services:
     ports: !reset []
   ad-server:
     ports: !reset []
+    environment:
+      # No mock bidders in production: only real demand (none until real DSPs or campaigns are added).
+      DSP_ENDPOINTS: ""
   pacing-service:
     ports: !reset []
   audit-service:
     ports: !reset []
   prometheus:
     ports: !reset []
+
+  # The traffic simulator and the three mock DSPs exist for local development and load tests. In
+  # production they would fill the dashboards with made-up viewers and advertisers, so they only
+  # start if you ask for them: add `--profile simulation` to the compose command.
+  simulator:
+    profiles: [simulation]
+  dsp-premium:
+    profiles: [simulation]
+  dsp-budget:
+    profiles: [simulation]
+  dsp-slow:
+    profiles: [simulation]
 
 volumes:
   caddy-data:
