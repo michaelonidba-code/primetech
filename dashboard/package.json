@@ -13,6 +13,7 @@
     "hash-password": "node --experimental-strip-types --no-warnings scripts/hash-password.ts"
   },
   "dependencies": {
+    "@fontsource/orbitron": "5.3.0",
     "nuxt": "4.6.1",
     "vue": "3.5.44",
     "vue-router": "5.4.0",

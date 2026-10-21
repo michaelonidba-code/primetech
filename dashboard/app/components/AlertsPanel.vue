@@ -111,7 +111,8 @@ button {
   border: 0;
   border-radius: 8px;
   background: var(--series-1);
-  color: #fff;
+  color: var(--on-accent);
+  box-shadow: var(--glow);
   cursor: pointer;
 }
 button.ghost {
