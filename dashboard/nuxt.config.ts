@@ -8,7 +8,7 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-07-01',
   ssr: false,
   devtools: { enabled: false },
-  css: ['~/assets/main.css'],
+  css: ['@fontsource/orbitron/latin-600.css', '@fontsource/orbitron/latin-800.css', '~/assets/main.css'],
   app: {
     head: {
       title: 'Ads Eventing',
@@ -17,11 +17,10 @@ export default defineNuxtConfig({
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
         { name: 'description', content: 'Live ads eventing pipeline: ad serving, pacing, stream processing and delivery. By Quila Visuals.' },
         { name: 'author', content: 'Quila Visuals' },
-        { name: 'theme-color', content: '#f9f9f7', media: '(prefers-color-scheme: light)' },
-        { name: 'theme-color', content: '#0d0d0d', media: '(prefers-color-scheme: dark)' },
+        { name: 'theme-color', content: '#03060c' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'mobile-web-app-capable', content: 'yes' },
-        { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
+        { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
         { name: 'apple-mobile-web-app-title', content: 'Ads Eventing' },
       ],
       link: [

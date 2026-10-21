@@ -65,23 +65,57 @@ main {
   gap: 16px;
 }
 header {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: flex-end;
   gap: 12px;
+  padding-bottom: 14px;
+}
+/* A light trail that sweeps along the bottom edge of the header. */
+header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background:
+    linear-gradient(90deg, transparent, var(--series-1) 45%, #fff 50%, var(--series-1) 55%, transparent) -40% 0 / 40% 100% no-repeat,
+    linear-gradient(90deg, rgba(0, 229, 255, 0.05), rgba(0, 229, 255, 0.45), rgba(0, 229, 255, 0.05));
+  box-shadow: var(--glow);
+  animation: trail 4.5s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+}
+@keyframes trail {
+  from { background-position: -40% 0, 0 0; }
+  to { background-position: 140% 0, 0 0; }
 }
 .title {
   display: flex;
   align-items: center;
   gap: 14px;
 }
+.title :deep(.brand-logo) {
+  background: var(--series-1);
+  filter: drop-shadow(0 0 6px rgba(0, 229, 255, 0.7));
+}
 h1 {
   margin: 0;
-  font-size: 22px;
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f2fdff;
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.9), 0 0 24px rgba(0, 229, 255, 0.5);
 }
 header p {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
 }
 .actions {
   display: flex;
@@ -93,12 +127,19 @@ header p {
 .ghost {
   font: inherit;
   min-height: 36px;
-  padding: 6px 12px;
+  padding: 6px 14px;
   border: 1px solid var(--axis);
-  border-radius: 8px;
-  background: var(--surface);
+  border-radius: 4px;
+  background: rgba(0, 229, 255, 0.06);
   color: var(--ink-1);
+  letter-spacing: 0.04em;
   cursor: pointer;
+  transition: box-shadow 0.2s, border-color 0.2s, background 0.2s;
+}
+.ghost:hover {
+  border-color: var(--series-1);
+  background: rgba(0, 229, 255, 0.14);
+  box-shadow: var(--glow);
 }
 .ghost:focus-visible {
   outline: 2px solid var(--series-1);

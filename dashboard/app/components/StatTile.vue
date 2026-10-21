@@ -27,13 +27,18 @@ defineProps<{
 }
 .label {
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 .value {
-  font-size: clamp(22px, 6.5vw, 28px);
+  font-family: var(--display);
+  font-size: clamp(20px, 6vw, 26px);
   overflow-wrap: anywhere;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
+  color: #f2fdff;
+  text-shadow: 0 0 6px rgba(0, 229, 255, 0.7), 0 0 18px rgba(0, 229, 255, 0.35);
 }
 .detail {
   color: var(--ink-muted);
