@@ -194,7 +194,7 @@
     video.addEventListener('pause', setPlayIcon)
     video.addEventListener('timeupdate', function () {
       var now = Date.now()
-      if (!video.paused && visible && lastTick) watchedMs += now - lastTick
+      if (!video.paused && visible && !document.hidden && lastTick) watchedMs += now - lastTick
       lastTick = video.paused ? 0 : now
       if (!fired.IMPRESSION && watchedMs >= IMPRESSION_AFTER_MS) send('IMPRESSION')
       if (!fired.IMPRESSION || !video.duration) return
@@ -236,6 +236,11 @@
       if (visible && video.paused && !video.ended && !userPaused && !reduceMotion) video.play().catch(function () {})
       if (!visible && !video.paused) video.pause()
     }, { threshold: [0, VIEWABLE, 1] }).observe(card)
+    document.addEventListener('visibilitychange', function () {
+      lastTick = 0
+      if (document.hidden && !video.paused) video.pause()
+      else if (!document.hidden && visible && video.paused && !video.ended && !userPaused && !reduceMotion) video.play().catch(function () {})
+    })
   }
 
   function scan() {

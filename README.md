@@ -453,6 +453,34 @@ In production the traffic simulator and mock DSPs are off (`profiles: [simulatio
 `deploy/docker-compose.prod.yml`), so the **Ad pipeline** view shows only real traffic. Add
 `--profile simulation` to the compose command to bring them back for a demo or load test.
 
+## Sponsor ad network
+
+The **Sponsors** tab sells video sponsorships on your own site (set up for 1world1dollar.com) and runs
+them through the real pipeline: ad server → events → Flink → Druid.
+
+* **Campaigns**: sponsor, landing page (https), CPM (at least `NUXT_SPONSOR_FLOOR_CPM`, default $5),
+  daily budget, countries and dates. Each needs an MP4 of 1 to 60 seconds (at most
+  `NUXT_SPONSOR_MAX_UPLOAD_MB`, default 80) and an explicit **Approve & go live**. Changing the sponsor,
+  link, price, budget, countries or video sends a live campaign back to draft. Every action is logged in
+  `.data/sponsor-actions.jsonl`.
+* **Serving**: the dashboard writes approved, in-date campaigns as guaranteed line items to
+  `catalog/catalog.json`, which the ad server reloads within 10 seconds (`CATALOG_FILE`), and the
+  daily budget is paced over 30-minute periods. Videos and a public `creatives.json` (no prices) go to the
+  `sponsor-media` volume, which Caddy serves at `/media/`.
+* **On the site**: one script and a placeholder per page:
+
+  ```html
+  <script async src="https://prime-tech.app/tag/sponsor-v1.js"></script>
+  <div data-pt-sponsor="home"></div>
+  ```
+
+  The tag waits until the placeholder is near the screen, shows a muted card labelled **Sponsored** with a
+  `rel="sponsored"` link, and counts an impression after 2 seconds of play with at least half the card
+  visible (and the tab in front). It sets no cookies and no storage and sends no device identifiers; the
+  country is estimated from the time zone or language. With no live sponsor the placeholder stays empty.
+* **Origins**: the ad server and gateway accept browser calls only from `SPONSOR_SITE_ORIGIN`
+  (comma-separated, default `https://1world1dollar.com,https://www.1world1dollar.com`).
+
 ## Hosting the dashboard as an app
 
 The dashboard is an installable web app (PWA): from the browser it installs on Windows, macOS,

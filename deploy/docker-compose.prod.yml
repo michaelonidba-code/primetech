@@ -58,7 +58,7 @@ services:
     ports: !reset []
     environment:
       # Only the publisher site's sponsor tag may send events from a browser.
-      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com}
+      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com,https://www.1world1dollar.com}
   jobmanager:
     ports: !reset []
   router:
@@ -76,7 +76,7 @@ services:
       CATALOG_FILE: /catalog/catalog.json
       # Sponsors enter every auction until the pacing service steers them; budgets still stop them.
       DIRECT_PARTICIPATION: "1.0"
-      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com}
+      CORS_ORIGIN: ${SPONSOR_SITE_ORIGIN:-https://1world1dollar.com,https://www.1world1dollar.com}
     volumes:
       - sponsor-catalog:/catalog:ro
   pacing-service:
