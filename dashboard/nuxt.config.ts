@@ -55,6 +55,13 @@ export default defineNuxtConfig({
     sessionTtlHours: 12, // NUXT_SESSION_TTL_HOURS
     authDisabled: false, // NUXT_AUTH_DISABLED
     trustProxy: false, // NUXT_TRUST_PROXY: true behind Caddy, to read the client address and scheme
+    // YouTube growth console. Google settings (API key, OAuth client, Ads developer token, refresh
+    // token) are entered in the console and stored server-side in this file (mode 600).
+    googleStorePath: '.data/google.json', // NUXT_GOOGLE_STORE_PATH
+    youtubeHistoryPath: '.data/youtube-history.jsonl', // NUXT_YOUTUBE_HISTORY_PATH
+    adsActionsLogPath: '.data/ads-actions.jsonl', // NUXT_ADS_ACTIONS_LOG_PATH: who launched/started/paused what
+    googleAdsApiVersion: 'v26', // NUXT_GOOGLE_ADS_API_VERSION
+    adsMaxDailyBudget: 1000, // NUXT_ADS_MAX_DAILY_BUDGET: cap on the daily budget the console accepts
     public: {
       // "proxy": the browser reads gateway stats through /api/gateway (Node builds).
       // "direct": it calls the gateway itself (the static Pages build, or ?gateway=<url>).

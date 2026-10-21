@@ -4,7 +4,18 @@ const online = useOnline()
 const { canPrompt, iosHint, install } = useInstall()
 const showIosHint = ref(false)
 
-onMounted(() => session.check())
+// Two views once signed in: the YouTube growth console (default) and the ad pipeline. The choice
+// lives in the URL hash so it survives reloads and can be bookmarked.
+const tab = ref<'youtube' | 'pipeline'>('youtube')
+function readTab() {
+  tab.value = location.hash === '#pipeline' ? 'pipeline' : 'youtube'
+}
+onMounted(() => {
+  readTab()
+  window.addEventListener('hashchange', readTab)
+  session.check()
+})
+onBeforeUnmount(() => window.removeEventListener('hashchange', readTab))
 // Back online, or back from the background: the session may have expired meanwhile.
 watch(online, (now) => now && session.check())
 </script>
@@ -50,7 +61,14 @@ watch(online, (now) => now && session.check())
         <code>NUXT_AUTH_USERS</code> and <code>NUXT_SESSION_SECRET</code> (see the README, "Hosting").
       </p>
     </section>
-    <DashboardView v-else />
+    <template v-else>
+      <nav class="tabs" aria-label="Views">
+        <a href="#youtube" :aria-current="tab === 'youtube' ? 'page' : undefined">YouTube growth</a>
+        <a href="#pipeline" :aria-current="tab === 'pipeline' ? 'page' : undefined">Ad pipeline</a>
+      </nav>
+      <GrowthView v-if="tab === 'youtube'" />
+      <DashboardView v-else />
+    </template>
   </main>
 </template>
 
@@ -144,6 +162,32 @@ header p {
 .ghost:focus-visible {
   outline: 2px solid var(--series-1);
   outline-offset: 2px;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.tabs a {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--ink-muted);
+  padding: 10px 14px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tabs a:hover {
+  color: var(--ink-1);
+}
+.tabs a[aria-current="page"] {
+  color: var(--series-1);
+  border-bottom-color: var(--series-1);
+  text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+  box-shadow: 0 6px 12px -8px rgba(0, 229, 255, 0.7);
 }
 .hint,
 .banner {

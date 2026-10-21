@@ -429,6 +429,30 @@ Prometheus ─rules─► Alertmanager ─webhook (bearer token)─► dashboard
 Grafana is provisioned with one dashboard: health tiles, ingest, ad serving, stream processing,
 pacing, the audit checks, and firing alerts.
 
+## YouTube growth console
+
+The dashboard opens on **YouTube growth**, which works with real data only:
+
+* **Channel stats** from the YouTube Data API: subscribers, views, videos and the latest 50 uploads, with
+  progress towards the goals (1M subscribers, 10M views). The server records the channel every hour in
+  `.data/youtube-history.jsonl` to chart growth.
+* **YouTube ad campaigns** through the Google Ads API (`v26`, set with `NUXT_GOOGLE_ADS_API_VERSION`).
+  **Promote** on a video creates a Demand Gen campaign limited to YouTube (in-stream, in-feed and Shorts),
+  with the channel picture as its logo. It is always created **paused**; nothing is spent until someone
+  presses **Start** and confirms. Launches, starts and pauses are logged to `.data/ads-actions.jsonl`.
+  Daily budgets above `NUXT_ADS_MAX_DAILY_BUDGET` (default 1000) are refused.
+
+Setup happens in the console under **Google connections**: a YouTube Data API key, a Web OAuth client
+(redirect URI shown in the console, `https://<domain>/api/google/callback`), a Google Ads developer token
+with Explorer or Basic access, and the Ads customer ID. Then **Connect Google**. Keys are stored server-side
+in `.data/google.json` (mode 600) and only ever shown masked. Google's sign-in return can't carry the
+`SameSite=Strict` session cookie, so `/api/google/callback` is guarded by a single-use, 10-minute state
+issued to a signed-in user instead.
+
+In production the traffic simulator and mock DSPs are off (`profiles: [simulation]` in
+`deploy/docker-compose.prod.yml`), so the **Ad pipeline** view shows only real traffic. Add
+`--profile simulation` to the compose command to bring them back for a demo or load test.
+
 ## Hosting the dashboard as an app
 
 The dashboard is an installable web app (PWA): from the browser it installs on Windows, macOS,
